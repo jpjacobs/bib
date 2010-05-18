@@ -23,7 +23,7 @@ require"bib.trans"
 debug = true
 
 -- Language selection, possibilities: en, es, nl
-language_def=en
+language_def="en"
 strings=bib.trans[language_def]
 
 -- Database connection data
@@ -61,4 +61,64 @@ os.remove(cache_path)
 -- template_vpath = "/templates"
 -- image_vpath = "/images"
 
-	
+-- Utility functions
+
+time = {}
+date = {}
+month = {}
+
+local datetime_mt = { __call = function (tab, date) return tab[language_def](date) end }
+
+setmetatable(time, datetime_mt)
+setmetatable(date, datetime_mt)
+setmetatable(month, datetime_mt)
+
+function time.pt(date)
+  local time = os.date("%H:%M", date)
+  date = os.date("*t", date)
+  return date.day .. " de "
+    .. months.pt[date.month] .. " de " .. date.year .. " às " .. time
+end
+
+function date.pt(date)
+  date = os.date("*t", date)
+  return weekdays.pt[date.wday] .. ", " .. date.day .. " de "
+    .. months.pt[date.month] .. " de " .. date.year
+end
+
+function month.pt(month)
+  return months.pt[month.month] .. " de " .. month.year
+end
+
+local function ordinalize(number)
+  if number == 1 then
+    return "1st"
+  elseif number == 2 then
+    return "2nd"
+  elseif number == 3 then
+    return "3rd"
+  else
+    return tostring(number) .. "th"
+  end
+end
+
+function time.en(date)
+  local time = os.date("%H:%M", date)
+  date = os.date("*t", date)
+  return months.en[date.month] .. " " .. ordinalize(date.day) .. " " ..
+     date.year .. " at " .. time
+end
+
+function date.en(date)
+	local s=strings.en
+	local date_tab={}
+	date_tab.year,date_tab.month,date_tab.day=date:match("(%d%d%d%d)-(%d%d)-(%d%d)")
+	date_tab.wday=os.date("*t",os.time(date_tab)).wday
+  return s.weekdays[date.wday] .. ", " .. s.months[date.month] .. " " ..
+     ordinalize(date.day) .. " " .. date.year 
+end
+
+function month.en(month)
+  return months.en[month.month] .. " " .. month.year
+end
+

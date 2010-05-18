@@ -29,6 +29,7 @@ mapper.driver = database.driver
 
 -- Define the models to be used / Definir los modeles necesarios
 models = {
+	page = bib:model "page",
 	book = bib:model "book",
 	copy = bib:model "copy",
 	author = bib:model "author",
@@ -39,16 +40,53 @@ models = {
 
 	tag = bib:model "tag",
 	taglink = bib:model "taglink"
-	-- TODO: Add E-library models
+	-- Add E-library models: Will be implemented as simple books, with the url reffering to the resource.
 }
 
 cache = orbit.cache.new(bib, cache_path)
+-- Methods for the page model / Métodos para el model "page"
+function view_page(web, page_id)
+	-- TODO FIXME
+	local page = pages:find(tonumber(page_id))
+	if page then
+		local recent = posts:find_recent()
+		local months = posts:find_months()
+		local pgs = pages:find_all()
+		return render_page(web, { page = page, months = months,
+		recent = recent, pages = pgs })
+	else
+		not_found(web)
+	end
+end
+
+bib:dispatch_get(cache(view_page), "/page/(%d+)")
 
 -- Methods for the Book model / Métodos para el model "book"
 --- Returns the most recently added books
 function models.book:find_recent(num)
+	local ti=table.insert
 	local num = num or 10
-	return models.copy:find_first("BookID = ?",{self.id, order="DateAquisition asc",count=num}).BookID
+	local copies=models.copy:find_all("",{nil,order="date_acquisition desc",count=num,fields={"book_id","date_acquisition"}})
+	-- Will contain true for books[book_id] will containt the acquisition date if it's in the list of recently acquired copies
+	-- Contenera la fecha de procuración para books[book_id] si book_id esta en uno de los ejemplares recien procurado.
+	local books,dates={},{}
+	for k=#copies,1,-1 do -- back to forth : need most recent books. / detras adelante: querimos los libros recientos
+		local cc=copies[k]
+		dates[cc.book_id]=cc.date_acquisition
+	end
+	for k,v in pairs(dates) do	-- use book_id's in dates to build the array of books to be fetched 
+		books[#books+1]=k				-- utiliza book_id en dates para construir la lista de libros para estar retornado
+	end
+
+	local ret=models.book:find_all("id = ?",{books}) -- Fetch books / buscar libros
+	for k,v in pairs(ret) do
+		local cur_book=v.id
+		v.date_acquisition = dates[cur_book]	-- Include an acquisition date field / incluye un campo de fecho de compra
+		v.author_rest_name = models.author:find(v.author_id).rest_name
+		v.author_last_name = models.author:find(v.author_id).last_name
+	end
+		
+	return ret
 end
 
 --- General search function
@@ -142,7 +180,7 @@ end
 function layout(web, args, inner_html)
 return html{
 	head{
-		title(blog_title),
+		title(bib_title),
 		meta{ ["http-equiv"] = "Content-Type",
 		content = "text/html; charset=utf-8" },
 		--link{ rel = 'stylesheet', type = 'text/css', href = web:static_link('/style.css'), media = 'screen' }
@@ -163,6 +201,14 @@ return html{
 } 
 end
 
+function _menu(web,args)
+	local res={ li( a{ href= web:link("/"), strings.homepage_name }) }
+	for _,page in pairs(args.pages) do
+		res[#res + 1] = li(a{ href = web:link("/page/" .. page.id), page.title })
+	end
+	return ul(res)
+end
+
 -- for using as inner html on the indexpage.
 --		div{ id = "searchbox",
 --			fieldset{
@@ -174,9 +220,28 @@ end
 --		}
 
 function index(web)
-   local book_rec = book:find_recent()
-   local pgs = pgs or pages:find_all()
+   local book_rec = models.book:find_recent()
+   local pgs = pgs or models.page:find_all()
    return render_index(web, { books = book_rec })
 end
 
-blog:dispatch_get(cache(index), "/", "/index") 
+bib:dispatch_get(cache(index), "/", "/index") 
+
+function render_index(web, args)
+	if #args.books == 0 then
+		return layout(web, args, p(strings.no_books))
+	else
+		local res = {}
+		local cur_time
+		for _, book in pairs(args.books) do
+			local str_time = date(book.date_acquisition)
+			if cur_time ~= str_time then
+				cur_time = str_time
+				res[#res + 1] = h2(str_time)
+			end
+			res[#res + 1] = h3(post.title)
+			res[#res + 1] = _post(web, post)
+		end
+		return layout(web, args, div.blogentry(res))
+	end
+end
