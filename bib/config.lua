@@ -24,7 +24,7 @@ debug = true
 
 -- Language selection, possibilities: en, es, nl
 language_def="en"
-strings=bib.trans[language_def]
+strings=bib.trans.strings[language_def]
 
 -- Database connection data
 -- Datos de conexión a la base de datos
@@ -73,21 +73,21 @@ setmetatable(time, datetime_mt)
 setmetatable(date, datetime_mt)
 setmetatable(month, datetime_mt)
 
-function time.pt(date)
+function time.es(date)
   local time = os.date("%H:%M", date)
   date = os.date("*t", date)
   return date.day .. " de "
-    .. months.pt[date.month] .. " de " .. date.year .. " às " .. time
+    .. months.es[date.month] .. " de " .. date.year .. " às " .. time
 end
 
-function date.pt(date)
+function date.es(date)
   date = os.date("*t", date)
-  return weekdays.pt[date.wday] .. ", " .. date.day .. " de "
-    .. months.pt[date.month] .. " de " .. date.year
+  return weekdays.es[date.wday] .. ", " .. date.day .. " de "
+    .. months.es[date.month] .. " de " .. date.year
 end
 
-function month.pt(month)
-  return months.pt[month.month] .. " de " .. month.year
+function month.es(month)
+  return months.es[month.month] .. " de " .. month.year
 end
 
 local function ordinalize(number)
@@ -109,11 +109,15 @@ function time.en(date)
      date.year .. " at " .. time
 end
 
-function date.en(date)
-	local s=strings.en
-	local date_tab={}
-	date_tab.year,date_tab.month,date_tab.day=date:match("(%d%d%d%d)-(%d%d)-(%d%d)")
-	date_tab.wday=os.date("*t",os.time(date_tab)).wday
+function date.en(date_in)
+	local s=strings
+	local date={}
+	date.year,date.month,date.day=date_in:match("(%d%d%d%d)-(%d%d)-(%d%d)")
+	date.wday=os.date("*t",os.time(date)).wday
+	print("--debug time =",date.year,date.month,date.day,date.wday)
+	for k,v in pairs(date) do
+		date[k]=tonumber(v)
+	end
   return s.weekdays[date.wday] .. ", " .. s.months[date.month] .. " " ..
      ordinalize(date.day) .. " " .. date.year 
 end

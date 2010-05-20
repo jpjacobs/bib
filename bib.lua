@@ -47,11 +47,9 @@ cache = orbit.cache.new(bib, cache_path)
 -- Methods for the page model / Métodos para el model "page"
 function view_page(web, page_id)
 	-- TODO FIXME
-	local page = pages:find(tonumber(page_id))
+	local page = models.page:find(tonumber(page_id))
 	if page then
-		local recent = posts:find_recent()
-		local months = posts:find_months()
-		local pgs = pages:find_all()
+		local pgs = models.page:find_all()
 		return render_page(web, { page = page, months = months,
 		recent = recent, pages = pgs })
 	else
@@ -201,12 +199,16 @@ return html{
 } 
 end
 
-function _menu(web,args)
+function _menu(web, args)
 	local res={ li( a{ href= web:link("/"), strings.homepage_name }) }
 	for _,page in pairs(args.pages) do
 		res[#res + 1] = li(a{ href = web:link("/page/" .. page.id), page.title })
 	end
 	return ul(res)
+end
+
+function _sidebar(web, args)
+	local res={ li( a{ href=web:link("/"), strings.homepage_name }) }
 end
 
 -- for using as inner html on the indexpage.
@@ -220,12 +222,27 @@ end
 --		}
 
 function index(web)
-   local book_rec = models.book:find_recent()
+   local books_rec = models.book:find_recent()
    local pgs = pgs or models.page:find_all()
-   return render_index(web, { books = book_rec })
+   return render_index(web, { books = books_rec,pages = pgs })
 end
 
 bib:dispatch_get(cache(index), "/", "/index") 
+
+function view_page(web, page_id)
+   local page = pages:find(tonumber(page_id))
+   if page then
+      local recent = posts:find_recent()
+      local months = posts:find_months()
+      local pgs = pages:find_all()
+      return render_page(web, { page = page, months = months,
+		     recent = recent, pages = pgs })
+   else
+      not_found(web)
+   end
+end
+
+bib:dispatch_get(cache(view_page),"/page/(%d+)")
 
 function render_index(web, args)
 	if #args.books == 0 then
@@ -239,9 +256,17 @@ function render_index(web, args)
 				cur_time = str_time
 				res[#res + 1] = h2(str_time)
 			end
-			res[#res + 1] = h3(post.title)
-			res[#res + 1] = _post(web, post)
+			res[#res + 1] = h3(book.title)
+			res[#res + 1] = _post(web, book)
 		end
 		return layout(web, args, div.blogentry(res))
 	end
 end
+
+function render_page(web, args)
+   return layout(web, args, div.blogentry(markdown(args.page.body)))
+end
+
+-- Add html utility functions to all render and layout functions, as to generate the HTML programmatically.
+-- Añadir funcciones html a todas las funcciones render y layout, para que pueden generar el HTML programmaticalemente.
+orbit.htmlify(bib, "layout", "_.+", "render_.+")
