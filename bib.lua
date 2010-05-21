@@ -60,9 +60,8 @@ end
 bib:dispatch_get(cache(view_page), "/page/(%d+)")
 
 -- Methods for the Book model / Métodos para el model "book"
---- Returns the most recently added books
+--- Returns the most recently added books, while adding all info needed (like Authors, tags, copies, ...)
 function models.book:find_recent(num)
-	local ti=table.insert
 	local num = num or 10
 	local copies=models.copy:find_all("",{nil,order="date_acquisition desc",count=num,fields={"book_id","date_acquisition"}})
 	-- Will contain true for books[book_id] will containt the acquisition date if it's in the list of recently acquired copies
@@ -73,15 +72,25 @@ function models.book:find_recent(num)
 		dates[cc.book_id]=cc.date_acquisition
 	end
 	for k,v in pairs(dates) do	-- use book_id's in dates to build the array of books to be fetched 
-		books[#books+1]=k				-- utiliza book_id en dates para construir la lista de libros para estar retornado
+		books[#books+1]=k		-- utiliza book_id en dates para construir la lista de libros para estar retornado
 	end
 
 	local ret=models.book:find_all("id = ?",{books}) -- Fetch books / buscar libros
 	for k,v in pairs(ret) do
-		local cur_book=v.id
-		v.date_acquisition = dates[cur_book]	-- Include an acquisition date field / incluye un campo de fecho de compra
+		local cur_book_id=v.id
+		v.date_acquisition = dates[cur_book_id]	-- Include an acquisition date field / incluye un campo de fecho de compra
 		v.author_rest_name = models.author:find(v.author_id).rest_name
 		v.author_last_name = models.author:find(v.author_id).last_name
+		-- Explication of next query: find all tags corresponding to this book: find all links, matching this book, and
+		-- inject the tag_text to which they point. However, we don't need any data from taglink self, so fields={}. We do
+		-- need the tag_text, so inject it from tags.
+		local ret = models.taglink:find_all("book_id = ?",{cur_book_id, fields={"tag_tag_text"}, inject={ model=models.tag, fields={"tag_text"}},fields={}})
+		local tags = {}
+		for k=1,#ret do
+			tags[#tags+1]=ret[k].tag_tag_text
+		end
+		v.tags=tags
+		v.ncopies=#(models.copy:find_all_by_book_id({cur_book_id}))
 	end
 		
 	return ret
@@ -174,6 +183,31 @@ end
 --  return template_env
 --end
 
+
+-- Controllers : gets the data together
+function index(web)
+   local books_rec = models.book:find_recent()
+   local pgs = pgs or models.page:find_all()
+   return render_index(web, { books = books_rec,pages = pgs })
+end
+
+bib:dispatch_get(cache(index), "/", "/index") 
+
+function view_page(web, page_id)
+   local page = pages:find(tonumber(page_id))
+   if page then
+      local recent = posts:find_recent()
+      local months = posts:find_months()
+      local pgs = pages:find_all()
+      return render_page(web, { page = page, months = months,
+		     recent = recent, pages = pgs })
+   else
+      not_found(web)
+   end
+end
+
+bib:dispatch_get(cache(view_page),"/page/(%d+)")
+
 -- Views for the application / Views para la aplicación
 function layout(web, args, inner_html)
 return html{
@@ -208,7 +242,12 @@ function _menu(web, args)
 end
 
 function _sidebar(web, args)
-	local res={ li( a{ href=web:link("/"), strings.homepage_name }) }
+	local res
+	res={
+	li( a{ href=web:link("/"), strings.homepage_name }),
+	li( a{ href=web:link("bytag"), strings.browse_by_tag })
+	}
+	return ul(res)
 end
 
 -- for using as inner html on the indexpage.
@@ -220,47 +259,33 @@ end
 --				}
 --			}
 --		}
-
-function index(web)
-   local books_rec = models.book:find_recent()
-   local pgs = pgs or models.page:find_all()
-   return render_index(web, { books = books_rec,pages = pgs })
-end
-
-bib:dispatch_get(cache(index), "/", "/index") 
-
-function view_page(web, page_id)
-   local page = pages:find(tonumber(page_id))
-   if page then
-      local recent = posts:find_recent()
-      local months = posts:find_months()
-      local pgs = pages:find_all()
-      return render_page(web, { page = page, months = months,
-		     recent = recent, pages = pgs })
-   else
-      not_found(web)
-   end
-end
-
-bib:dispatch_get(cache(view_page),"/page/(%d+)")
-
 function render_index(web, args)
 	if #args.books == 0 then
 		return layout(web, args, p(strings.no_books))
 	else
 		local res = {}
-		local cur_time
+		local cur_time -- For Grouping books bought on same date together
 		for _, book in pairs(args.books) do
-			local str_time = date(book.date_acquisition)
+			local str_time = book.date_acquisition
 			if cur_time ~= str_time then
 				cur_time = str_time
 				res[#res + 1] = h2(str_time)
 			end
 			res[#res + 1] = h3(book.title)
-			res[#res + 1] = _post(web, book)
+			res[#res + 1] = _book_short(web, book)
 		end
-		return layout(web, args, div.blogentry(res))
+		return layout(web, args, div.booklist(res))
 	end
+end
+
+function _book_short(web, book)
+	return {
+		div.tags{ table.concat(book.tags,",") },
+		strings.copies_available .. book.ncopies,
+		markdown(book.abstract),
+		--a{ href = web:link("/post/" .. post.id .. "#comments"), strings.comments ..
+		--" (" .. (post.n_comments or "0") .. ")" }
+   }
 end
 
 function render_page(web, args)

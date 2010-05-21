@@ -81,7 +81,7 @@ CREATE TABLE bib_taglink (
 
 -- A testpage
 -- Una página de prueba
-INSERT INTO bib_page VALUES(1,"<html><body><h1>It Works!</h1></body></html>","It Works!");
+INSERT INTO bib_page VALUES(1,"*It Works!*","It Works!");
 
 -- Some authors
 -- Unos autores
@@ -92,7 +92,7 @@ INSERT INTO bib_author VALUES (2,"Márquez","Gabriel García","http://en.wikiped
 INSERT INTO bib_book VALUES (1,"Sherlock Holmes: A study in scarlet",1,"","Classic detective story",5,"http://en.wikipedia.org/wiki/A_Study_in_Scarlet");
 INSERT INTO bib_copy VALUES (1,1,"2010-05-15","first edition","1887-01-01",100);
 INSERT INTO bib_book VALUES (2,"Love in the Time of Cholera",2,"9580600007","Classic book about love",5,"http://en.wikipedia.org/wiki/Love_in_the_Time_of_Cholera");
-INSERT INTO bib_copy VALUES (2,2,"2010-05-17","second edition","1985-01-01",200);
+INSERT INTO bib_copy VALUES (2,2,"2010-05-15","second edition","1985-01-01",200);
 INSERT INTO bib_book VALUES (3,"Chronicle of a Death Foretold",2,"9780140157543","The story recreates a murder that took place in Sucre, Colombia in 1951. The character named Santiago Nasar is based on a good friend from García Márquez's childhood, Cayetano Gentile Chimento. Pelayo classifies this novel as a combination of journalism, realism and detective story",5,"http://en.wikipedia.org/wiki/Gabriel_garcia_marquez");
 INSERT INTO bib_copy VALUES (3,3,"2010-05-17","second edition","1983-01-01",150);
 INSERT INTO bib_copy VALUES (4,3,"2010-05-20","third edition","1985-01-01",170);
@@ -119,3 +119,12 @@ INSERT INTO `bib_center` VALUES(14, 'Mano amiga','8', 'Av. Hernando Sanabria 275
 INSERT INTO `bib_center` VALUES(15, 'Hogar Don Bosco','8', 'Av. Hernando Sanabria 2775 (Ex Centenario)<br>entre 2º y 3er anillo.<br>Teléfono: 3541100<br>Santa Cruz', '', 'db-hogar-don-bosco.jpg');
 INSERT INTO `bib_center` VALUES(16, 'Barrio Juvenil','8', 'Zona La Cuchilla<br>entre Barrio España y Universidad Evangélica<br>Teléfono: 358 59 93', '', 'db-barrio-juvenil.jpg');
 INSERT INTO `bib_center` VALUES(17, 'Patio Don Bosco Defensoría','8', 'Barrio 12 de Octubre<br>frente al Centro de Salud "San Carlos"<br>Teléfono: 3412693<br>Santa Cruz', '', 'db-patio-don-bosco.jpg');
+
+INSERT INTO bib_tag VALUES (1,"roman");
+INSERT INTO bib_tag VALUES (2,"detective");
+INSERT INTO bib_tag VALUES (3,"colombia");
+
+INSERT INTO bib_taglink VALUES (1,1,2); -- tag roman -> love in times of cholera
+INSERT INTO bib_taglink VALUES (2,1,3); -- tag roman -> Chronicle ...
+INSERT INTO bib_taglink VALUES (3,3,3); -- tag colombia -> Chronicle ...
+INSERT INTO bib_taglink VALUES (4,2,1); -- tag detective -> A study in scarlet
