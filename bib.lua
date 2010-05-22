@@ -208,6 +208,13 @@ end
 
 bib:dispatch_get(cache(view_page),"/page/(%d+)")
 
+-- Controllers for static content:
+-- Controladores para contenido stático:
+-- css / css
+-- images / imagenes
+-- book covers / Tapas de los libros
+bib:dispatch_static("/covers/.*%.jpg","/covers/.*%gif")
+
 -- Views for the application / Views para la aplicación
 function layout(web, args, inner_html)
 return html{
@@ -260,18 +267,34 @@ end
 --			}
 --		}
 function render_index(web, args)
+	local searchbox
+	searchbox = div.searchbox{
+		fieldset{
+			legend{strings.search_book},
+			form{ name="search",method="post",action="/search", 
+				strings.search, input{type="text",name="search_string"},
+				strings.search_by, '<select name="criterium">',
+					option{value="title",selected="selected",strings.title},
+					option{value="author",strings.author},
+					option{value="isbn",strings.isbn},
+					option{value="tag",strings.tag},
+					option{value="abstract",strings.abstract},
+				'</select>',
+				input{type="submit",value=strings.search}
+			}		
+		}
+	}
+	local res = {searchbox}
 	if #args.books == 0 then
 		return layout(web, args, p(strings.no_books))
 	else
-		local res = {}
 		local cur_time -- For Grouping books bought on same date together
 		for _, book in pairs(args.books) do
 			local str_time = book.date_acquisition
 			if cur_time ~= str_time then
 				cur_time = str_time
-				res[#res + 1] = h2(str_time)
+				res[#res + 1] = h2{style="clear:both",str_time}
 			end
-			res[#res + 1] = h3(book.title)
 			res[#res + 1] = _book_short(web, book)
 		end
 		return layout(web, args, div.booklist(res))
@@ -279,7 +302,15 @@ function render_index(web, args)
 end
 
 function _book_short(web, book)
-	return {
+	local cover_img
+	if book.url_cover~= "" then
+		cover_img=book.url_cover
+	else
+		cover_img="/covers/cover0-default.gif"
+	end
+	return div.book_short{ style="clear:both",
+		h3(book.title),
+		div.cover{ a{ href = web:link("/book/".. book.id), img { style="float:left", height="100px",src=web:static_link(cover_img), alt=strings.cover_of .. book.title}}},
 		div.tags{ table.concat(book.tags,",") },
 		strings.copies_available .. book.ncopies,
 		markdown(book.abstract),
