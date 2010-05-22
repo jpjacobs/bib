@@ -1,0 +1,3 @@
+require 'bib'
+
+return bib
