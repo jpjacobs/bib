@@ -16,6 +16,7 @@
 --
 
 module ("bib", package.seeall)
+
 require"bib.trans"
 
 -- Enable debugging functions
@@ -119,3 +120,4 @@ function month.en(month)
   return months.en[month.month] .. " " .. month.year
 end
 
+return _M

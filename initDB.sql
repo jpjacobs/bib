@@ -34,6 +34,10 @@ CREATE TABLE bib_author (
 -- User management / Gestion de usuarios
 CREATE TABLE bib_user (
 	"id" INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+	"login" TEXT,
+	"password" TEXT,
+	"auth" TEXT DEFAULT NULL,
+	"is_admin" INTEGER,
 	"center_id" INTEGER, -- reference to centers table, out of the bib-system, 0 when unknown
 	"telephone" INTEGER,
 	"email" TEXT,
@@ -120,6 +124,9 @@ INSERT INTO `bib_center` VALUES(14, 'Mano amiga','8', 'Av. Hernando Sanabria 275
 INSERT INTO `bib_center` VALUES(15, 'Hogar Don Bosco','8', 'Av. Hernando Sanabria 2775 (Ex Centenario)<br>entre 2º y 3er anillo.<br>Teléfono: 3541100<br>Santa Cruz', '', 'db-hogar-don-bosco.jpg');
 INSERT INTO `bib_center` VALUES(16, 'Barrio Juvenil','8', 'Zona La Cuchilla<br>entre Barrio España y Universidad Evangélica<br>Teléfono: 358 59 93', '', 'db-barrio-juvenil.jpg');
 INSERT INTO `bib_center` VALUES(17, 'Patio Don Bosco Defensoría','8', 'Barrio 12 de Octubre<br>frente al Centro de Salud "San Carlos"<br>Teléfono: 3412693<br>Santa Cruz', '', 'db-patio-don-bosco.jpg');
+
+INSERT INTO bib_user VALUES(1,"admin","admin",NULL,1,1,"12341234","admin@blah.com",0);
+INSERT INTO bib_user VALUES(2,"user","user",NULL,0,1,"43214321","user@blah.com",0);
 
 INSERT INTO bib_tag VALUES (1,"roman");
 INSERT INTO bib_tag VALUES (2,"detective");

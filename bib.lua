@@ -3,8 +3,58 @@
 -- and <a href="http://www.luarocks.org/">LuaRocks</a>
 -- It's build to be easy to deploy, manage, use and customize.
 --
+-- Copyright (c) 2010 Jan-Pieter Jacobs
+--
+-- Permission is hereby granted, free of charge, to any
+-- person obtaining a copy of this software and associated
+-- documentation files (the "Software"), to deal in the
+-- Software without restriction, including without limitation
+-- the rights to use, copy, modify, merge, publish,
+-- distribute, sublicense, and/or sell copies of the
+-- Software, and to permit persons to whom the Software is
+-- furnished to do so, subject to the following conditions:
+--
+-- The above copyright notice and this permission notice
+-- shall be included in all copies or substantial portions of
+-- the Software.
+--
+-- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+-- KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+-- WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+-- PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS
+-- OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+-- OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+-- OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+-- SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+--
+--
 -- Bib es una sistema de gestion de biblioteca integrada, construido con <a href="http://keplerproject.github.com/orbit/">Orbit</a>
 -- and <a href="http://www.luarocks.org/">LuaRocks</a>. Esta construido para ser facil en instalación, utilización, gestión y personalisación.
+--
+-- Copyright (c) 2010 Jan-Pieter Jacobs
+--
+-- Se autoriza, de forma gratuita, a cualquier
+-- persona que ha obtenido una copia de este software y 
+-- archivos asociados de documentación (el "Software"), para tratar en el
+-- Software sin restricción, incluyendo sin ninguna limitación en lo que concierne
+-- los derechos para usar, copiar, modificar, fusionar, publicar,
+-- distribuir, sublicenciar, y / o vender copias de este
+-- Software, y para permitir a las personas que usan el Software para 
+-- hacerlo, con sujeción a las siguientes condiciones:
+--
+-- El aviso de copyright anterior y este aviso de permiso
+-- se incluirá en todas las copias o partes sustanciales de
+-- este Software.
+--
+-- EL SOFTWARE SE ENTREGA "TAL CUAL", SIN GARANTÍA DE NINGÚN
+-- TIPO, EXPRESA o implícita, no limitado a la GARANTÍAS DE
+-- COMERCIALIZACIÓN, CAPACIDAD DE HACER Y DE NO INFRACCIÓN DE COPYRIGHT. EN NINGÚN 
+-- CASO LOS AUTORES O TITULARES DEL COPYRIGHT SERÁN RESPONSABLES DE 
+-- NINGUNA RECLAMACIÓN, daños o OTRAS RESPONSABILIDADES, 
+-- YA SEA EN UN LITIGIO, agravio o DE OTRO MODO, 
+-- DERIVADAS DE, FUERA DE O EN CONEXION CON EL
+-- SOFTWARE SU UTILIZACIÓN U OTRAS OPERACIONES EN EL SOFTWARE.
+--
 -- @release 0.1
 -- @usage ./orbit bib.ws
 
@@ -18,6 +68,7 @@ module("bib", package.seeall, orbit.new)
 
 -- Load the config file bib/config.lua / Carga el archivo de configuración bib/config.lua
 require "bib.config"
+require "bib.admin"
 
 -- Load and connect the database / Carga la base de datos y conectase
 require("luasql." .. database.driver)
@@ -26,6 +77,25 @@ local env = luasql[database.driver]()
 -- Make the mapper use this database by default / Hace que el mapper utilize esta base de datos por defecto
 mapper.conn = env:connect(unpack(database.conn_data))
 mapper.driver = database.driver
+
+--- Utility function to check whether a user is a user
+function check_user(web)
+	local auth = web.cookies.authentication
+	if auth then
+		local login,auth_hash =auth:match("(%w*)||(%d*)")
+		local user = models.user:find_by_login{ login }
+		if (user and auth_hash ~= user.auth) then
+			print("-- check_user dbg",
+			tprint(user))
+			web:delete_cookie("authentication")
+		end
+		return models.user:find_by_login_and_auth{ login, auth_hash }
+	else
+		print("--debug check_user, cookie authentication not found",auth,login,auth_hash)
+		return nil
+	end
+end
+
 
 -- Define the models to be used / Definir los modeles necesarios
 models = {
@@ -234,7 +304,7 @@ return html{
 				_sidebar(web, args)
 			},  
 			div{ id = "contents", inner_html },
-			div{ id = "footer", copyright_notice }
+			div{ id = "footer", style="clear:both", markdown(strings.copyright_notice) }
 		}
 	}
 } 
