@@ -85,13 +85,11 @@ function check_user(web)
 		local login,auth_hash =auth:match("(%w*)||(%d*)")
 		local user = models.user:find_by_login{ login }
 		if (user and auth_hash ~= user.auth) then
-			print("-- check_user dbg",
-			tprint(user))
+			-- Notice: Firefox does not delete cookies with the cookie window open (don't panic if the cookie does not instantly vanish).
 			web:delete_cookie("authentication")
 		end
 		return models.user:find_by_login_and_auth{ login, auth_hash }
 	else
-		print("--debug check_user, cookie authentication not found",auth,login,auth_hash)
 		return nil
 	end
 end
@@ -112,22 +110,30 @@ models = {
 	taglink = bib:model "taglink"
 	-- Add E-library models: Will be implemented as simple books, with the url reffering to the resource.
 }
-
-cache = orbit.cache.new(bib, cache_path)
--- Methods for the page model / Métodos para el model "page"
-function view_page(web, page_id)
-	-- TODO FIXME
-	local page = models.page:find(tonumber(page_id))
-	if page then
-		local pgs = models.page:find_all()
-		return render_page(web, { page = page, months = months,
-		recent = recent, pages = pgs })
-	else
-		not_found(web)
+-- Methods for all models / Métodos para todos modelos
+do -- Only put the functions in the model
+	--- Makes an index out of a model
+	-- @return ret a table containing a list of letters, containing the number of
+	local function index(self,field)
+		local ret={}
+		local query=("SELECT COUNT(id) FROM %s WHERE %s LIKE '%%s%%%%';"):format(self.table_name,field)
+		for k=97,122 do
+			local cur_letter = string.char(k)
+			local number = bib.mapper.conn:execute(query:format(cur_letter)):fetch()
+			if number > 0 then
+				ret[cur_letter] = number
+			end
+		end
+		return ret
+	end
+	-- Install method to all models / Instalar método a todos modelos
+	for k,v in pairs(models) do
+		v.index=index
 	end
 end
 
-bib:dispatch_get(cache(view_page), "/page/(%d+)")
+cache = orbit.cache.new(bib, cache_path)
+-- Methods for the page model / Métodos para el model "page"
 
 -- Methods for the Book model / Métodos para el model "book"
 --- Returns the most recently added books, while adding all info needed (like Authors, tags, copies, ...)
@@ -160,7 +166,7 @@ function models.book:find_recent(num)
 			tags[#tags+1]=ret[k].tag_tag_text
 		end
 		v.tags=tags
-		v.ncopies=#(models.copy:find_all_by_book_id({cur_book_id}))
+		v.ncopies=#(models.copy:find_all_by_book_id({cur_book_id})) -- TODO Add support for loaned books.
 	end
 		
 	return ret
@@ -187,7 +193,6 @@ end
 -- Methods for the copy model / Métodos para el model "copy"
 
 -- Methods for the author model / Métodos para el model "model"
-
 -- Methods for the user model / Métodos para el model "user"
 
 -- Methods for the loan model / Métodos para el model "loan"
@@ -258,25 +263,37 @@ end
 function index(web)
    local books_rec = models.book:find_recent()
    local pgs = pgs or models.page:find_all()
-   return render_index(web, { books = books_rec,pages = pgs })
+   local user = check_user(web)
+   return render_index(web, { books = books_rec, pages = pgs, user=user})
 end
 
-bib:dispatch_get(cache(index), "/", "/index") 
+bib:dispatch_get(index, "/", "/index") 
 
 function view_page(web, page_id)
-   local page = pages:find(tonumber(page_id))
-   if page then
-      local recent = posts:find_recent()
-      local months = posts:find_months()
-      local pgs = pages:find_all()
-      return render_page(web, { page = page, months = months,
-		     recent = recent, pages = pgs })
-   else
-      not_found(web)
-   end
+	local page = models.page:find(tonumber(page_id))
+	local user = check_user(web)
+	if page then
+		local pgs = models.page:find_all()
+		return render_page(web, { pages=pgs, page = page, user=user })
+	else
+		not_found(web)
+	end
 end
 
-bib:dispatch_get(cache(view_page),"/page/(%d+)")
+bib:dispatch_get(view_page, "/page/(%d+)")
+
+-- Search page
+function search_results(web)
+	local books_rec = models.book:find_recent()
+	local pgs = pgs or models.page:find_all()
+	local user = check_user(web)
+	local c_posible = {title="title",author="author",isbn="isbn",tag="tag",abstract="abstract"}
+	local c = c_possible[c] or "title" -- ensure a valid c is chosen
+	-- TODO Add book searching function.
+	return render_search_results(web,{books=book_rec, pages = pgs, user=user})
+end
+
+bib:dispatch_get(search_results, "/search")
 
 -- Controllers for static content:
 -- Controladores para contenido stático:
@@ -286,7 +303,7 @@ bib:dispatch_get(cache(view_page),"/page/(%d+)")
 bib:dispatch_static("/covers/.*%.jpg","/covers/.*%gif")
 
 -- Views for the application / Views para la aplicación
-function layout(web, args, inner_html)
+function layout(web, args, inner_html) --{{{
 return html{
 	head{
 		title(bib_title),
@@ -315,6 +332,11 @@ function _menu(web, args)
 	for _,page in pairs(args.pages) do
 		res[#res + 1] = li(a{ href = web:link("/page/" .. page.id), page.title })
 	end
+	if args.user then
+		res[#res+1]=li( a{ href = web:link("/login"),strings.logged_in_as,args.user.login} )
+	else
+		res[#res+1]=li( a{ href = web:link("/login"),strings.login_button} )
+	end
 	return ul(res)
 end
 
@@ -326,7 +348,7 @@ function _sidebar(web, args)
 	}
 	return ul(res)
 end
-
+--}}}
 -- for using as inner html on the indexpage.
 --		div{ id = "searchbox",
 --			fieldset{
@@ -336,14 +358,16 @@ end
 --				}
 --			}
 --		}
-function render_index(web, args)
+--- Renders the inner HTML for the indexpage
+function render_index(web, args) --{{{
+	local tstart=os.time()
 	local searchbox
 	searchbox = div.searchbox{
 		fieldset{
 			legend{strings.search_book},
-			form{ name="search",method="post",action="/search", 
-				strings.search, input{type="text",name="search_string"},
-				strings.search_by, '<select name="criterium">',
+			form{ name="search",method="GET",action=web:link("/search"), 
+				strings.search, input{type="text",name="q"},
+				strings.search_by, '<select name="c">',
 					option{value="title",selected="selected",strings.title},
 					option{value="author",strings.author},
 					option{value="isbn",strings.isbn},
@@ -367,6 +391,7 @@ function render_index(web, args)
 			end
 			res[#res + 1] = _book_short(web, book)
 		end
+		print("--render_index time: ",os.time()-tstart)
 		return layout(web, args, div.booklist(res))
 	end
 end
@@ -380,19 +405,28 @@ function _book_short(web, book)
 	end
 	return div.book_short{ style="clear:both",
 		h3(book.title),
-		div.cover{ a{ href = web:link("/book/".. book.id), img { style="float:left", height="100px",src=web:static_link(cover_img), alt=strings.cover_of .. book.title}}},
+		div.cover{ a{ href = web:link("/book/".. book.id), img { style="float:left", height="100px",src=web:static_link(cover_img), alt=strings.cover_of .. book.title} }},
 		div.tags{ table.concat(book.tags,",") },
 		strings.copies_available .. book.ncopies,
 		markdown(book.abstract),
 		--a{ href = web:link("/post/" .. post.id .. "#comments"), strings.comments ..
 		--" (" .. (post.n_comments or "0") .. ")" }
    }
-end
+end 
+-- }}}
 
-function render_page(web, args)
+--- Renders inner html for static pages, and plugs them into the layout function
+function render_page(web, args) --{{{
    return layout(web, args, div.blogentry(markdown(args.page.body)))
+end
+--}}}
+
+--- Renders the search results
+function render_search_results(web, args)
+	return layout(web,args,h2("Search results")..ul(res))
 end
 
 -- Add html utility functions to all render and layout functions, as to generate the HTML programmatically.
 -- Añadir funcciones html a todas las funcciones render y layout, para que pueden generar el HTML programmaticalemente.
 orbit.htmlify(bib, "layout", "_.+", "render_.+")
+-- vim:fdm=marker

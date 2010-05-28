@@ -2,17 +2,17 @@
 module("bib", package.seeall)
 
 --- Initialisation of random function
-function init_random()
+function init_random() --{{{
 	print("-- init_random called")
 	math.randomseed(os.time())
 	-- perhaps improve with http://lua-users.org/wiki/MathLibraryTutorial
-end
+end --}}}
 init_random()
 
 --- Append more than 1 element to an array
 -- @params t table to be appended too
 -- @params ... list or table of elements to be appended
-function tappend (t,...)
+function tappend (t,...) --{{{
 	local ti=table.insert
 	local t2
 	-- If the second argument is a table, add the elements of that table
@@ -25,14 +25,14 @@ function tappend (t,...)
 	for k=1,#t2 do
 		ti(t,t2[k])
 	end
-end
+end --}}}
 
 --- Returns a string that list a table recursively (can be reloaded with table=loadstring("return "..str)())
 -- Note: not tested on cyclic or selfcontaining tables.
 -- @params t table to list
 -- @params indent initial indentation (used internally)
 -- @params done a list of tables that already have been traversed (to avoid eternal loops)
-function tprint (t, indent, done)
+function tprint (t, indent, done) --{{{ 
 	local res={}  -- result table to be concatenated 
 	local done = done or {}
 	local ta=tappend
@@ -62,46 +62,91 @@ function tprint (t, indent, done)
 		ta(res,"}")
 	end
 	return table.concat(res)	-- concatenate the result
-end
+end --}}}
 
 
 -- Controllers for admin related stuff.
 -- Admin interface
 --- Controller for the admin section (redirects if not logged in)
-function admin(web)
-	-- If the user is not set/known, then redirect to the login page
+-- @param web webobject which will be passed by the dispatcher
+-- @param params captchures matched by the dispatcher, which will either be words (other adminpages) or numbers (TODO necessary?)
+function admin(web,params) --{{{
+	-- List of admin pages, except the admin mainpage.
+	local adminPageList = {
+		page="page"}
+--		adduser=render_adduser,
+--		edituser=render_edituser,
+--
+--		addbook=render_addbook,
+--		editbook=render_editbook,
+--		addauthor=render_addauthor,
+--		editauthor=render_editauthor,
 	local user=check_user(web)
+	-- If the user is not set/known, then redirect to the login page
 	if not user then
 		return web:redirect(web:link("/login", { link_to = web:link("/admin") }))
 	else
+		-- If the user is an admin, redirect to the admin page
 		if user.is_admin == 1 then
-			return admin_layout(web, render_admin(web, params))
+			if params==nil then
+				return admin_layout(web, render_admin(web, params))
+			-- Received a capture, indicating that 
+			else
+ 				print("--debug admin ",params)
+				local page_requested=adminPageList[params:match("(%w+)")]
+				local params_pass
+				if page_requested then
+					params_pass = params:match("%w+/(.+)")
+					return admin_layout(web,_M["render_admin_".. page_requested ](web,params_pass))
+				else
+					return not_found
+				end
+			end
+		-- Logged is as a normal user, redirect to the loginpage, in order to log in as an admin instead
 		else
-			return web:redirect(web:link("/login", { link_to = web:link("/admin")}))
+			return web:redirect(web:link("/login", { link_to = web:link("/admin"), not_admin="1"}))
 		end
 	end
-end
+end --}}}
 
-bib:dispatch_get(admin, "/admin", "/admin/(%d+)")
+bib:dispatch_get(admin, "/admin","/admin/(%w+.+)")
 
-function login_get(web)
-	return login_layout(web , { link_to = web:link(web.input.link_to or "/")} )		 
-end
+--- Controller for the GET part of the login page
+function login_get(web) -- {{{
+	-- Convert the result of a previous login to the apropriate errormessage
+	local result_login
+	if web.GET.not_found=="1" then
+		result_login = strings.user_not_found
+	elseif web.GET.not_match=="1" then
+		result_login = strings.password_not_match
+	elseif web.GET.not_admin=="1" then
+		print("-- login_get detected not_admin")
+		result_login = strings.not_allowed_to_administration
+	else
+		result_login = ""
+	end
+	-- if the link_to parameter was given then take that one as argument, else take "/"
+	return login_layout(web , { link_to = web:link(web.input.link_to or "/"), login = web.input.login, result_login=result_login} )		 
+end --}}}
 
-function login_post(web)
-	web:delete_cookie("authentication")
+--- Controller for the POST part of the login page
+function login_post(web) --{{{
 	local login = web.input.login
 	local password = web.input.password
 	local user = models.user:find_by_login{ login }
+	-- If the link_to parameter is empty (we're not being referred to the loginpage from another page)
 	if web:empty_param("link_to") then
 		web.input.link_to = web:link("/")
 	end
+	-- The user that has been entered exists
 	if user then
+		-- The entered password matches
 		if password == user.password then
+			-- Make a new auth cookie, save it in the DB, and set it as Cookie
 			local auth_hash=math.random(2^31-1)
 			user.auth=auth_hash
 			user:save()
-			web:set_cookie("authentication",user.login.."||"..auth_hash)
+			web:set_cookie("authentication",{value=user.login.."||"..auth_hash,expires=os.time()+3600})
 			return web:redirect(web.input.link_to)
 		else
 	 		return web:redirect(web:link("/login", { login = login,
@@ -113,11 +158,14 @@ function login_post(web)
 			link_to = web.input.link_to,
 			not_found = "1" }))
 	end
-end
+end --}}}
 
 bib:dispatch_get(login_get, "/login")
 bib:dispatch_post(login_post, "/login")
 
+function render_admin_page(web,params)
+	return h2(params)
+end
 -- Not yet converted further on
 function add_user_get(web)
    if not check_user(web) then
@@ -164,14 +212,6 @@ bib:dispatch_post(add_user_post, "/adduser")
 
 -- Views
 function login_layout(web, params)
-	local result_login
-	if web.GET.not_found=="1" then
-		result_login = div.error(strings.user_not_found)
-	elseif web.GET.not_match=="1" then
-		result_login = div.error(strings.password_not_match)
-	else
-		result_login = ""
-	end
 	return html{
 		head{
 			title{strings.login_page},
@@ -187,12 +227,12 @@ function login_layout(web, params)
 					}
 				},
 				div{ id="contents",
-					result_login,
+					p.error(params.result_login),
 					fieldset{
 						legend{strings.login_page},
-						form{ name="login", method="post", action="/login", 
-							strings.user_id,  input{ type="text", name="login"},
-							strings.password, input{ type="text", name="password"},
+						form{ name="login", method="post", action=web:link("/login"), 
+							strings.user_id,  input{ type="text", name="login",value=params.login or ""},
+							strings.password, input{ type="password", name="password"},
 							input{ type="submit",value=strings.login_button },
 							input{ type = "hidden", name = "link_to", value = params.link_to },
 						}
@@ -203,55 +243,51 @@ function login_layout(web, params)
 		}
 	}
 end
---[[
--- TODO not yet converted
+
+--- View-template for the adminpages, inner_html being render_admin or whatever.
 function admin_layout(web, inner_html)
-   return html{
-      head{
-	 title"ToyCMS Admin",
-	 meta{ ["http-equiv"] = "Content-Type",
-	    content = "text/html; charset=utf-8" },
-	 link{ rel = 'stylesheet', type = 'text/css', 
-	    href = web:static_link('/admin_style.css'), media = 'screen' }
-      },
-      body{
-	 div{ id = "container",
-	    div{ id = "header", title = "sitename", "ToyCMS Admin" },
-	    div{ id = "mainnav",
-	       ul {
-		  li{ a{ href = web:link("/admin"), strings.admin_home } },
-		  li{ a{ href = web:link("/adduser"), strings.new_user } },
-		  li{ a{ href = web:link("/editsection"), strings.new_section } },
-		  li{ a{ href = web:link("/editpost"), strings.new_post } },
-		  li{ a{ href = web:link("/comments"), strings.manage_comments } },
-	       }
-	    }, 
-            div{ id = "menu",
-	       _admin_menu(web, args)
-	    },  
-	    div{ id = "contents", inner_html },
-	    div{ id = "footer", "Copyright 2007 Fabio Mascarenhas" }
-	 }
-      }
-   } 
+	return html{
+		head{
+			title{"Bib.lua ",strings.administration},
+			meta{ ["http-equiv"] = "Content-Type", content = "text/html; charset=utf-8" },
+			link{ rel = 'stylesheet', type = 'text/css', href = web:static_link('/admin_style.css'), media = 'screen' }
+		},
+		body{
+			div{ id = "container",
+				div{ id = "header", title = "sitename", "Bib.lua ",strings.administration },
+				div{ id = "mainnav",
+					ul {
+						li{ a{ href = web:link("/admin"), strings.admin_home } },
+						li{ a{ href = web:link("/page"), strings.pagina } },
+					--[[	li{ a{ href = web:link("/adduser"), strings.new_user } },
+						-- TODO add, change links
+						li{ a{ href = web:link("/editsection"), strings.new_section } },
+						li{ a{ href = web:link("/editpost"), strings.new_post } },
+						li{ a{ href = web:link("/comments"), strings.manage_comments } },--]]
+					}
+				}, 
+				div{ id = "menu", _admin_menu(web, args) },  
+				div{ id = "contents", inner_html },
+				div{ id = "footer", markdown(strings.copyright_notice) }
+			}
+		}
+	} 
 end
 
 function _admin_menu(web)
-   local res = {}
-   local user = check_user(web)
-   if user then
-      res[#res + 1] = ul{ li{ strings.logged_as, 
-	    (user.name or user.login) } }
-      res[#res + 1] = h3(strings.sections)
-      local section_list = {}
-      local sections = models.section:find_all()
-      for _, section in ipairs(sections) do
-	 section_list[#section_list + 1] = 
-	    li{ a{ href=web:link("/admin/" .. section.id), section.title } }
-      end
-      res[#res + 1] = ul(table.concat(section_list,"\n"))
-   end
-   return table.concat(res, "\n")
+	local res = {}
+	local user = check_user(web)
+	if user then
+		res[#res + 1] = ul{ li{ strings.logged_in_as, user.login } }
+		res[#res + 1] = h3(strings.sections)
+		local section_list = {}
+		for section,name in ipairs({page=strings.page}) do
+			section_list[#section_list + 1] = 
+			li{ a{ href=web:link("/admin/" .. section), name } }
+		end
+		res[#res + 1] = ul(table.concat(section_list,"\n"))
+	end
+	return table.concat(res, "\n")
 end
 
 function render_admin(web, params)
@@ -338,6 +374,7 @@ function render_login(web, params)
    return div(res)
 end
 
+--[[ TODO up to here
 function render_add_user(web, params)
    local error_login, error_password, error_name = "", "", ""
    if params.error_login then 
@@ -535,3 +572,4 @@ function render_manage_comments(web, params)
 end
 --]]
 orbit.htmlify(bib, "_.+", "admin_layout","login_layout", "render_.+")
+-- vim:fdm=marker
