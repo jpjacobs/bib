@@ -136,6 +136,23 @@ cache = orbit.cache.new(bib, cache_path)
 -- Methods for the page model / Métodos para el model "page"
 
 -- Methods for the Book model / Métodos para el model "book"
+--- Add's lot's of data from other models to the book to be returned.
+function models.book.pimp(book)
+		book.author_rest_name = models.author:find(book.author_id).rest_name
+		book.author_last_name = models.author:find(book.author_id).last_name
+		-- Explication of next query: find all tags corresponding to this book: find all links, matching this book, and
+		-- inject the tag_text to which they point. However, we don't need any data from taglink self, so fields={}. We do
+		-- need the tag_text, so inject it from tags.
+		local ret = models.taglink:find_all("book_id = ?",{book.id, fields={"tag_tag_text"}, inject={ model=models.tag, fields={"tag_text"}},fields={}})
+		local tags = {}
+		for k=1,#ret do
+			tags[#tags+1]=ret[k].tag_tag_text
+		end
+		book.tags=tags
+		book.ncopies=#(models.copy:find_all_by_book_id({book.id})) -- TODO Add support for loaned books.
+
+end
+	
 --- Returns the most recently added books, while adding all info needed (like Authors, tags, copies, ...)
 function models.book:find_recent(num)
 	local num = num or 10
@@ -154,19 +171,8 @@ function models.book:find_recent(num)
 	local ret=models.book:find_all("id = ?",{books}) -- Fetch books / buscar libros
 	for k,v in pairs(ret) do
 		local cur_book_id=v.id
+		models.book.pimp(v)
 		v.date_acquisition = dates[cur_book_id]	-- Include an acquisition date field / incluye un campo de fecho de compra
-		v.author_rest_name = models.author:find(v.author_id).rest_name
-		v.author_last_name = models.author:find(v.author_id).last_name
-		-- Explication of next query: find all tags corresponding to this book: find all links, matching this book, and
-		-- inject the tag_text to which they point. However, we don't need any data from taglink self, so fields={}. We do
-		-- need the tag_text, so inject it from tags.
-		local ret = models.taglink:find_all("book_id = ?",{cur_book_id, fields={"tag_tag_text"}, inject={ model=models.tag, fields={"tag_text"}},fields={}})
-		local tags = {}
-		for k=1,#ret do
-			tags[#tags+1]=ret[k].tag_tag_text
-		end
-		v.tags=tags
-		v.ncopies=#(models.copy:find_all_by_book_id({cur_book_id})) -- TODO Add support for loaned books.
 	end
 		
 	return ret
@@ -178,11 +184,7 @@ end
 -- @params orderby Field by which to order the returned list
 -- @params order Which sense the list should be ordered: asc or desc
 function models.book:find_gen(term,criterium,orderby,order,num)
-	local criterium = criterium or "Title"
-	local orderby = orderby or "Title"
-	local order = order or "asc"
-	local num = num or 10
-	return models.book[find_by_..crit](self,crit.." = ?",{term, order=orderby.." "..order, count=num})
+	
 end
 
 --- Finds all copies of of this book.
@@ -284,13 +286,57 @@ bib:dispatch_get(view_page, "/page/(%d+)")
 
 -- Search page
 function search_results(web)
-	local books_rec = models.book:find_recent()
+	-- GET parameters from the web object
+	local c_possible = {title="title",author="author",isbn="isbn",tag="tag",abstract="abstract"}
+
+	local c = c_possible[web.input.c:lower()] or "title"-- The search criterium
+	local q = web.input.q -- The search query, aka search term
+	local limit = tonumber(web.input.limit) 
+	limit = limit and limit >= 0 or 10 -- The maximum number of results to return (number or nil)
+	local offset = tonumber(web.input.offset)
+	offset = offset and offset >=0 or 0 -- The offset from book 0 (number or nil)
+	local order = web.input.order or "ASC" -- The order ASC or DESC
+	if order:upper() ~= "ASC" and order:upper() ~="DESC" then -- Only allow asc or desc
+		order = "ASC"
+	end
+	local orderby = orderby or "title" -- TODO integrate below
+
+	local conn = models.book.model.conn -- This will be the connection to make the more complex SQL calls
 	local pgs = pgs or models.page:find_all()
+	local books_result = {}
 	local user = check_user(web)
-	local c_posible = {title="title",author="author",isbn="isbn",tag="tag",abstract="abstract"}
-	local c = c_possible[c] or "title" -- ensure a valid c is chosen
 	-- TODO Add book searching function.
-	return render_search_results(web,{books=book_rec, pages = pgs, user=user})
+	local curs,err
+	-- Check for all cases that the search criterium can be in (Explications of the SQL below).
+	-- This initializes a cursor object which will be used to fetch the books.
+	if c == "title" then
+		-- Select  where title is like the search term
+		curs,err = conn:execute(([[SELECT * FROM bib_book WHERE title LIKE "%%%s%%" ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,orderby,order,limit,offset))
+	elseif c == "author" then
+		-- Select the authors that correspond (first or rest of name) to the searchterm, and match that to the book with a JOIN)
+		curs,err = conn:execute(([[SELECT bib_book.* FROM bib_book, bib_author WHERE bib_author.last_name LIKE "%%%s%%" OR bib_author.rest_name LIKE "%%%s%%" AND bib_book.author_id = bib_author.id ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,q,orderby,order,limit,offset))
+	elseif c == "isbn" then
+		-- Select books by isbn, but only return exact matches (other don't have much meaning) and remove any - or space that may have been in the queried ISBN
+		curs,err = conn:execute(([[SELECT * from bib_book WHERE isbn = "%s" ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q:gsub("[- ]+",""),orderby,order,limit,offset))
+	elseif c == "tag" then
+		-- Select the right tag from bib_tag, match it to books in bib_taglink, and get the info from the  books that have these tags applied.
+		curs,err = conn:execute(([[SELECT bib_book.* FROM bib_tag,bib_taglink,bib_book WHERE bib_tag.tag_text LIKE "%%%s%%" AND bib_taglink.book_id = bib_book.id AND bib_taglink.tag_id = bib_tag.id ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,orderby,order,limit,offset))
+	elseif c == "abstract" then
+		-- Select books which have the term in their abstract
+		curs,err = conn:execute(([[SELECT * FROM bib_book WHERE abstract LIKE "%%%s%%" ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,orderby,order,limit,offset))
+	else -- Should never happen, as title get's set by default higher up
+		print("Hit a bug in search_results, we should never be in something else but defined fields",debug.traceback()) 
+	end
+	if err then print("-- search result debug ERROR: ",err) end	
+	-- Start fetching all the books (stops when curs:fetch returns nil instead of the table)
+	local cur_book = {}
+	while curs:fetch(cur_book,"a") do
+		models.book.pimp(cur_book) -- Add extra data to the returned book
+		setmetatable(cur_book,{__index = models.book }) -- Set the metatble to the metatable that comes with books, enables stuff like :delete and :save
+		books_result [#books_result +1] = cur_book
+		cur_book ={}
+	end
+	return render_search_results(web,{books=books_result, pages = pgs, user=user})
 end
 
 bib:dispatch_get(search_results, "/search")
@@ -349,19 +395,12 @@ function _sidebar(web, args)
 	return ul(res)
 end
 --}}}
--- for using as inner html on the indexpage.
---		div{ id = "searchbox",
---			fieldset{
---				legend{""},
---				form{
---					input{}
---				}
---			}
---		}
+
 --- Renders the inner HTML for the indexpage
 function render_index(web, args) --{{{
 	local tstart=os.time()
 	local searchbox
+	-- TODO Add options to order/ asc/desc and limit
 	searchbox = div.searchbox{
 		fieldset{
 			legend{strings.search_book},
@@ -423,7 +462,11 @@ end
 
 --- Renders the search results
 function render_search_results(web, args)
-	return layout(web,args,h2("Search results")..ul(res))
+	local res={}
+	for _, book in pairs(args.books) do
+		res[#res + 1] = _book_short(web, book)
+	end
+	return layout(web,args,h2("Search results")..div.booklist(res))
 end
 
 -- Add html utility functions to all render and layout functions, as to generate the HTML programmatically.
