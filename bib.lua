@@ -78,6 +78,16 @@ local env = luasql[database.driver]()
 mapper.conn = env:connect(unpack(database.conn_data))
 mapper.driver = database.driver
 
+-- SQL query sanitation and un-sanitation functions
+do
+	local sanitize_tab={"select","drop","insert","delete","update","create","pragma","alter"}
+	function luasql.sanitize(query)
+		
+	end
+
+	function luasql.desanitaize(text)
+	end
+end
 --- Utility function to check whether a user is a user
 function check_user(web)
 	local auth = web.cookies.authentication
@@ -98,6 +108,7 @@ end
 -- Define the models to be used / Definir los modeles necesarios
 models = {
 	page = bib:model "page",
+	cat = bib:model "cat",
 	book = bib:model "book",
 	copy = bib:model "copy",
 	author = bib:model "author",
@@ -150,7 +161,7 @@ function models.book.pimp(book)
 		end
 		book.tags=tags
 		book.ncopies=#(models.copy:find_all_by_book_id({book.id})) -- TODO Add support for loaned books.
-
+		book.cat = models.cat:find(book.cat_id).cat_text
 end
 	
 --- Returns the most recently added books, while adding all info needed (like Authors, tags, copies, ...)
@@ -287,10 +298,10 @@ bib:dispatch_get(view_page, "/page/(%d+)")
 -- Search page
 function search_results(web)
 	-- GET parameters from the web object
-	local c_possible = {title="title",author="author",isbn="isbn",tag="tag",abstract="abstract"}
+	local field_possible = {title="title",author="author",isbn="isbn",tag="tag",abstract="abstract"}
 
-	local c = c_possible[web.input.c:lower()] or "title"-- The search criterium
-	local q = web.input.q -- The search query, aka search term
+	local c = field_possible[web.input.c:lower()] or "title"-- The search criterium
+	local q = web.input.q:gsub("'","''") -- The search query, aka search term TODO : optimize sanitation
 	local limit = tonumber(web.input.limit) 
 	limit = limit and limit >= 0 or 10 -- The maximum number of results to return (number or nil)
 	local offset = tonumber(web.input.offset)
@@ -299,31 +310,30 @@ function search_results(web)
 	if order:upper() ~= "ASC" and order:upper() ~="DESC" then -- Only allow asc or desc
 		order = "ASC"
 	end
-	local orderby = orderby or "title" -- TODO integrate below
+	local orderby = field_possible[web.input.orderby:lower()] or "title"
 
 	local conn = models.book.model.conn -- This will be the connection to make the more complex SQL calls
 	local pgs = pgs or models.page:find_all()
 	local books_result = {}
 	local user = check_user(web)
-	-- TODO Add book searching function.
 	local curs,err
 	-- Check for all cases that the search criterium can be in (Explications of the SQL below).
 	-- This initializes a cursor object which will be used to fetch the books.
 	if c == "title" then
 		-- Select  where title is like the search term
-		curs,err = conn:execute(([[SELECT * FROM bib_book WHERE title LIKE "%%%s%%" ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,orderby,order,limit,offset))
+		curs,err = conn:execute(([[SELECT * FROM bib_book WHERE title LIKE '%%%s%%' ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,orderby,order,limit,offset))
 	elseif c == "author" then
 		-- Select the authors that correspond (first or rest of name) to the searchterm, and match that to the book with a JOIN)
-		curs,err = conn:execute(([[SELECT bib_book.* FROM bib_book, bib_author WHERE bib_author.last_name LIKE "%%%s%%" OR bib_author.rest_name LIKE "%%%s%%" AND bib_book.author_id = bib_author.id ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,q,orderby,order,limit,offset))
+		curs,err = conn:execute(([[SELECT bib_book.* FROM bib_book, bib_author WHERE (bib_author.last_name LIKE '%%%s%%' OR bib_author.rest_name LIKE '%%%s%%') AND bib_book.author_id = bib_author.id ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,q,orderby,order,limit,offset))
 	elseif c == "isbn" then
 		-- Select books by isbn, but only return exact matches (other don't have much meaning) and remove any - or space that may have been in the queried ISBN
-		curs,err = conn:execute(([[SELECT * from bib_book WHERE isbn = "%s" ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q:gsub("[- ]+",""),orderby,order,limit,offset))
+		curs,err = conn:execute(([[SELECT * from bib_book WHERE isbn = '%s' ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q:gsub('[- ]+',''),orderby,order,limit,offset))
 	elseif c == "tag" then
 		-- Select the right tag from bib_tag, match it to books in bib_taglink, and get the info from the  books that have these tags applied.
-		curs,err = conn:execute(([[SELECT bib_book.* FROM bib_tag,bib_taglink,bib_book WHERE bib_tag.tag_text LIKE "%%%s%%" AND bib_taglink.book_id = bib_book.id AND bib_taglink.tag_id = bib_tag.id ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,orderby,order,limit,offset))
+		curs,err = conn:execute(([[SELECT bib_book.* FROM bib_tag,bib_taglink,bib_book WHERE bib_tag.tag_text LIKE '%%%s%%' AND bib_taglink.book_id = bib_book.id AND bib_taglink.tag_id = bib_tag.id ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,orderby,order,limit,offset))
 	elseif c == "abstract" then
 		-- Select books which have the term in their abstract
-		curs,err = conn:execute(([[SELECT * FROM bib_book WHERE abstract LIKE "%%%s%%" ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,orderby,order,limit,offset))
+		curs,err = conn:execute(([[SELECT * FROM bib_book WHERE abstract LIKE '%%%s%%' ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,orderby,order,limit,offset))
 	else -- Should never happen, as title get's set by default higher up
 		print("Hit a bug in search_results, we should never be in something else but defined fields",debug.traceback()) 
 	end
@@ -331,7 +341,7 @@ function search_results(web)
 	-- Start fetching all the books (stops when curs:fetch returns nil instead of the table)
 	local cur_book = {}
 	while curs:fetch(cur_book,"a") do
-		models.book.pimp(cur_book) -- Add extra data to the returned book
+		cur_book:pimp() -- Add extra data to the returned book
 		setmetatable(cur_book,{__index = models.book }) -- Set the metatble to the metatable that comes with books, enables stuff like :delete and :save
 		books_result [#books_result +1] = cur_book
 		cur_book ={}
@@ -340,6 +350,16 @@ function search_results(web)
 end
 
 bib:dispatch_get(search_results, "/search")
+
+function view_book(web, id)
+	local user = check_user()
+	local book = models.book:find(id)
+	book:pimp()
+
+	return render_book({web,book=book,user=user})
+end
+
+bib:dispatch_get(view_book, "/book/(%d+)")
 
 -- Controllers for static content:
 -- Controladores para contenido stático:
@@ -390,7 +410,7 @@ function _sidebar(web, args)
 	local res
 	res={
 	li( a{ href=web:link("/"), strings.homepage_name }),
-	li( a{ href=web:link("bytag"), strings.browse_by_tag })
+	li( a{ href=web:link("bytag"), strings.browse_by,string.category })
 	}
 	return ul(res)
 end
@@ -400,7 +420,6 @@ end
 function render_index(web, args) --{{{
 	local tstart=os.time()
 	local searchbox
-	-- TODO Add options to order/ asc/desc and limit
 	searchbox = div.searchbox{
 		fieldset{
 			legend{strings.search_book},
@@ -412,6 +431,17 @@ function render_index(web, args) --{{{
 					option{value="isbn",strings.isbn},
 					option{value="tag",strings.tag},
 					option{value="abstract",strings.abstract},
+				'</select>',
+				strings.order_by, '<select name="orderby">',
+					option{value="title",selected="selected",strings.title},
+					option{value="author",strings.author},
+					option{value="isbn",strings.isbn},
+					option{value="tag",strings.tag},
+					option{value="abstract",strings.abstract},
+				'</select>',
+				'<select name="order">',
+					option{value="desc",selected="selected",strings.order_desc},
+					option{value="asc",strings.order_asc},
 				'</select>',
 				input{type="submit",value=strings.search}
 			}		
@@ -442,12 +472,13 @@ function _book_short(web, book)
 	else
 		cover_img="/covers/cover0-default.gif"
 	end
+	local abstract = book.abstract:match("^(.*)<!%-%-%s*break%s*%-%->") or book.abstract
 	return div.book_short{ style="clear:both",
-		h3(book.title),
+		h3{book.title,strings.by_author,book.author_last_name,", ",book.author_rest_name},
 		div.cover{ a{ href = web:link("/book/".. book.id), img { style="float:left", height="100px",src=web:static_link(cover_img), alt=strings.cover_of .. book.title} }},
-		div.tags{ table.concat(book.tags,",") },
+		div.tags{em{book.cat,class="category"},": ", table.concat(book.tags,", ") },
 		strings.copies_available .. book.ncopies,
-		markdown(book.abstract),
+		markdown(abstract),
 		--a{ href = web:link("/post/" .. post.id .. "#comments"), strings.comments ..
 		--" (" .. (post.n_comments or "0") .. ")" }
    }
@@ -461,13 +492,32 @@ end
 --}}}
 
 --- Renders the search results
-function render_search_results(web, args)
+function render_search_results(web, args) --{{{
 	local res={}
 	for _, book in pairs(args.books) do
 		res[#res + 1] = _book_short(web, book)
 	end
 	return layout(web,args,h2("Search results")..div.booklist(res))
-end
+end --}}}
+
+--- Renders the page for a book
+function render_book(web,args) --{{{
+	local cover_img
+	if book.url_cover~= "" then
+		cover_img=book.url_cover
+	else
+		cover_img="/covers/cover0-default.gif"
+	end
+	local res={
+		h3{book.title,strings.by_author,book.author_last_name, ", " , book.author_rest_name },
+		div.cover{ a{ href = web:link("/book/".. book.id), img {height="100px", src=web:static_link(cover_img), alt=strings.cover_of .. book.title} } },
+		div.tags{ em.category {book.cat}, ": ", table.concat(book.tags,", ") },
+		strings.copies_available .. book.ncopies,
+		markdown(book.abstract)
+		}
+
+	return layout(web,args,res)
+end --}}}
 
 -- Add html utility functions to all render and layout functions, as to generate the HTML programmatically.
 -- Añadir funcciones html a todas las funcciones render y layout, para que pueden generar el HTML programmaticalemente.
