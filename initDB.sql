@@ -54,7 +54,7 @@ CREATE TABLE bib_center (
 	"logo" TEXT
 	);
 
-CREATE TABLE bib_loan (
+CREATE TABLE bib_lending (
 	"id" INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
 	"user_ID" INTEGER, -- Ref to User.UserID
 	"copy_ID" INTEGER, -- Ref to Copy.CopyID

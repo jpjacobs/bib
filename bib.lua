@@ -114,7 +114,7 @@ models = {
 	author = bib:model "author",
 
 	user = bib:model "user",
-	loan = bib:model "loan",
+	lending = bib:model "lending",
 	reservation = bib:model "reservation",
 
 	tag = bib:model "tag",
@@ -160,7 +160,7 @@ function models.book.pimp(book)
 			tags[#tags+1]=ret[k].tag_tag_text
 		end
 		book.tags=tags
-		book.ncopies=#(models.copy:find_all_by_book_id({book.id})) -- TODO Add support for loaned books.
+		book.ncopies=#(models.copy:find_all_by_book_id({book.id})) -- TODO Add support for lend books.
 		book.cat = models.cat:find(book.cat_id).cat_text
 end
 	
@@ -208,7 +208,7 @@ end
 -- Methods for the author model / Métodos para el model "model"
 -- Methods for the user model / Métodos para el model "user"
 
--- Methods for the loan model / Métodos para el model "loan"
+-- Methods for the lending model / Métodos para el model "lending"
 
 -- Methods for the reservation model / Métodos para el model "reservation"
 
@@ -352,14 +352,54 @@ end
 bib:dispatch_get(search_results, "/search")
 
 function view_book(web, id)
-	local user = check_user()
+	local user = check_user(web)
 	local book = models.book:find(id)
+	local pages = models.page:find_all()
 	book:pimp()
+	if user then
+		local user_res=models.reservation:find_by_book_id_and_user_id({book_id,user.id})
+	end
 
-	return render_book({web,book=book,user=user})
+	return render_book(web,{book=book,user=user,pages=pages,reservation=user_res})
 end
 
+function book_post(web,book_id) --{{{
+	local user = check_user(web)
+	local result
+	local res
+	local submit=web.input.submit
+	if not user then
+		not_found(web)
+	elseif submit==strings.reserve then
+		-- check if there already is a reservation
+		res =models.reservation:find_by_book_id_and_user_id({book_id,user.id})
+		if res then
+			result="doubleReservation"
+		else
+			res=models.reservation:new()
+			res.user_id=user.id
+			res.book_id=book_id
+			res.date=os.date("%Y-%m-%d",os.time())
+			res:save()
+			result="reservationOK"
+		end
+	elseif submit==strings.cancel_reservation then
+		res=models.reservation:find_by_book_id_and_user_id({book_id,user.id})
+		if not res then
+			result="noReservation"
+		else
+			res:delete()
+		 	result="deleteReservationOK"
+		end
+	else
+		print("debug uncaught case",submit,args)
+	end
+
+	return web:redirect(web:link("/book/"..book_id,{result=result,reservation= res and res.id or nil}))
+end --}}}
+
 bib:dispatch_get(view_book, "/book/(%d+)")
+bib:dispatch_post(book_post, "/book/(%d+)")
 
 -- Controllers for static content:
 -- Controladores para contenido stático:
@@ -501,21 +541,71 @@ function render_search_results(web, args) --{{{
 end --}}}
 
 --- Renders the page for a book
-function render_book(web,args) --{{{
+function render_book(web, args) --{{{
+	local book=args.book
 	local cover_img
 	if book.url_cover~= "" then
 		cover_img=book.url_cover
 	else
 		cover_img="/covers/cover0-default.gif"
 	end
-	local res={
-		h3{book.title,strings.by_author,book.author_last_name, ", " , book.author_rest_name },
+	local result = web.input.result
+	local mesg = ""
+	if result == "reservationOK" then
+		mesg = div.mesg {strings.reservation_ok}
+	elseif result == "deleteReservationOK" then
+		mesg = div.error {strings.delete_reservation_ok}
+	elseif result == "doubleReservation" then
+		mesg = div.error {strings.double_reservation}
+	elseif result == "noReservation" then
+		mesg = div.error {strings.no_reservation}
+	end
+	
+	local res={mesg,
+		h3{book.title ,strings.by_author,book.author_last_name , ", " , book.author_rest_name },
 		div.cover{ a{ href = web:link("/book/".. book.id), img {height="100px", src=web:static_link(cover_img), alt=strings.cover_of .. book.title} } },
 		div.tags{ em.category {book.cat}, ": ", table.concat(book.tags,", ") },
 		strings.copies_available .. book.ncopies,
 		markdown(book.abstract)
 		}
+	if args.user then
+		res[#res+1]= h3(strings.user_menu)
+		-- if reserved by this user : put date available and un-reserve button
+		-- else put copies available and reserve button
+		if web.input.reservation then
+			res[#res+1]=form{action=web:link("/book/"..book.id), method="POST",
+				strings.reserved,
+				input{ name="submit",type="submit", value=strings.cancel_reservation},
+			}
+		else
+			res[#res+1]= form {action=web:link("/book/"..book.id), method="POST",
+				strings.copies_available, book.ncopies,
+				input{ name="submit",type="submit", value=strings.reserve },
+			}
+		end
 
+		if args.user.is_admin == 1 then
+			res[#res+1] = {
+				h3(strings.admin_menu),
+				div.group{
+					h4(strings.this_book),
+					a{ href=web:link("/edit/book"..book.id, {edit=1}), strings.edit_book}," ",
+					a{ href=web:link("/edit/book"..book.id, {delete=1}), strings.delete_book}," ",
+					}
+				}
+			local copies = models.copy:find_all_by_book_id({book.id})
+			local copies_list = {}
+			for _,copy in pairs(copies) do
+				copies_list[#copies_list+1] = li{ book.title.." ", copy.id ," ",
+					a{ href=web:link("/edit/copy/"..copy.id,{lend=1}),	strings.lend_copy}," ",
+					a{ href=web:link("/edit/copy/"..copy.id,{["return"]=1}),	strings.return_copy}," ",
+					a{ href=web:link("/edit/copy/"..copy.id,{delete=1}),	strings.delete_copy}," ",
+					a{ href=web:link("/edit/copy/"..copy.id,{edit=1}),	strings.edit_copy},
+					}
+			end
+			res[#res+1]=div.group{ h4(strings.copies), ul(copies_list)}
+		end
+	end
 	return layout(web,args,res)
 end --}}}
 
