@@ -58,6 +58,12 @@
 -- @release 0.1
 -- @usage ./orbit bib.ws
 
+-- debug hook
+local function memusage()
+	print("--debug Using ",collectgarbage("count"),"Kb of memory")
+end
+--debug.sethook(memusage,"c")
+
 require "luarocks.require"	-- Working with Luarocks
 require "orbit"				-- uses orbit
 require "orbit.cache"		-- ... and it's caching module
@@ -135,6 +141,89 @@ do -- Only put the functions in the model
 		v.index=index
 	end
 end
+
+-- Form information for different models, used to build the edit forms and pars edit POST info. The format is straight forward.
+-- title is the field of the model used as in the page title
+-- fields is a table containing info for each field that will be editable by the administrator
+-- Each field in turn consists of:
+--		name 	: name of the field as used in the db/model
+--		caption	: the string that will be place before the field (typically coming from strings) 
+--		type	: type of the input (notice the [" "] because type is a keyword in lua). currently supported are:
+--			text		: Single line text input
+--			textarea	: multiline text input, which will be markdowned afterwards
+--			select		: drop-down selection box having 2 usages:
+--				1) provided a model, will supply id's for all items in the model, using {fields} as fields for displaying in the options
+--				2) provided a table of options, in order which can be selected (no option to change display value to other than the actual value in the DB. Will be added if needed)
+--			file		: upload a file + select url (TODO to be implemented)
+--
+models.book.form={
+	title="title",
+	fields = {
+		{name="title",caption=strings.title,["type"]="text"},
+		{name="author_id",caption=strings.author,["type"]="select",model=models.author,fields={"rest_name","last_name","id"}}, --TODO Make these fields autocomplete, and add a "new ... " link style drupal autocomplete for authors and tags
+		{name="cat_id",caption=strings.category,["type"]="select",model=models.cat,fields={"cat_text","id"}},
+		{name="isbn",caption=strings.isbn,["type"]="text"},
+		{name="abstract",caption=strings.abstract,["type"]="textarea"},
+		{name="url_ref",caption=strings.url_ref,["type"]="text"},
+		{name="url_cover",caption=strings.url_cover,["type"]="text"}
+	}
+}
+
+models.cat.form={
+	title="cat_text",
+	fields={{name="cat_text",caption=strings.category,["type"]="text"}}
+}
+
+models.tag.form={
+	title="tag_text",
+	fields={{name="tag_text",caption=strings.tag,["type"]="text"}}
+}
+models.page.form={
+	title="title",
+	fields = {
+		{name="title",caption=strings.title,["type"]="text"},
+		{name="body",caption=strings.body,["type"]="textarea"}
+	}
+}
+models.author.form={
+	title="last_name",
+	fields = {
+		{name="last_name",caption=strings.last_name,["type"]="text"},
+		{name="rest_name",caption=strings.rest_name,["type"]="text"},
+		{name="url_ref",caption=strings.url_ref,["type"]="text"}
+	}
+}
+models.copy.form={
+	title="id",
+	fields = {
+		{name="book_id",caption=strings.book,["type"]="select",model=models.book,fields={"title","id"}},
+		{name="date_acquisition",caption=strings.date_acquisition,["type"]="text"},
+		{name="edition",caption=strings.edition, ["type"]="text"},
+		{name="price",caption=strings.price,["type"]="text"}
+	}
+}
+models.user.form={
+	title="login",
+	fields = {
+		{name="login",caption=strings.login,["type"]="text"},
+		--{name="password",caption=strings.password,["type"]="password"},
+		{name="is_admin",caption=strings.admin,["type"]="select",options={0,1}},
+		{name="center_id",caption=strings.center,["type"]="select",model=models.center,fields={"name","id"}},
+		{name="telephone",caption=strings.telephone,["type"]="text"},
+		{name="email",caption=strings.email,["type"]="text"}, -- verify if it's a unique email in the db.
+		{name="debt",caption=strings.debt,["type"]="text"}
+	}
+}
+models.center.form={
+	title="name",
+	fields = {
+		{name="name",caption=strings.name,["type"]="text"},
+		{name="center_id",caption=strings.subcenter_of,["type"]="select",model=models.center,fields={"name","id"}},
+		{name="address",caption=strings.address,["type"]="textarea"},
+		{name="contact",caption=strings.contact_person,["type"]="textarea"},
+		--{name="logo",caption=strings.logo,["type"]="text"} --TODO not implemented
+	}
+}
 
 cache = orbit.cache.new(bib, cache_path) -- No longer used: pages where username get's displayed can't be cached.
 -- Methods for the page model / Métodos para el model "page"
@@ -301,7 +390,6 @@ function view_page(web, page_id) --{{{
 	local page = models.page:find(tonumber(page_id))
 	local user = check_user(web)
 	if page then
-		print("--debug view_page",tprint(page))
 		page:update_html() -- updates html from the markdown in body if necessary.
 		local pgs = models.page:find_all()
 		return render_page(web, { pages=pgs, page = page, user=user })
@@ -441,7 +529,6 @@ function markdown_syntax(web,args) --{{{
 	else
 		local fhin=io.open("static/markdown."..language_def..".html")
 		innerhtml = fhin:read("*a")
-		print("--debug markdown innerhtml",fhin,innerhtml)
 		fhin:close()
 	end
 	return layout(web,{user=user;pages=pages},innerhtml)

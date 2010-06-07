@@ -114,26 +114,26 @@ INSERT INTO bib_copy VALUES (4,3,"2010-05-20","third edition","1985-01-01",170);
 
 -- Information about the centers
 -- Informaciones sobre los centros
-INSERT INTO `bib_center` VALUES(1, 'Plataforma UNIDOS',0 , '', '', 'plataforma.jpg');
-INSERT INTO `bib_center` VALUES(2, 'CERENID',0,  'Calle Ballivián, 1196 Segundo Anillo<br>Directora: María José del Pino Martín<br>Teléfono: 335 16 44<br><a href="mailto:choquita34@hotmail.com">choquita34@hotmail.com</a><br><a href="mailto:choquita34@yahoo.com">choquita34@yahoo.com</a>', '', 'cerenid.jpg');
-INSERT INTO `bib_center` VALUES(3, 'Alalay','0' ,'Calle Teniente Rivero #158', 'Director: Omar Herrera<br>Teléfono: 70590727', 'alalay.jpg');
-INSERT INTO `bib_center` VALUES(20, 'Casa de niños','3' , 'Calle Teniente Rivero #158', 'Coordinadora: Vivian Montaño<br>Teléfono: 332 72 91', 'alalay.jpg');
-INSERT INTO `bib_center` VALUES(21, 'Casa de niñas','3' , 'Calle 2 #39<br>Barrio Universitario entrando por el radial 19, segundo puente.', '<br>Coordinadora: Patricia Justiniano<br>Teléfono: 356 56 13', 'alalay.jpg');
-INSERT INTO `bib_center` VALUES(22, 'Aldea El Torno','3' , 'Antigua carretera a Cochabamba Km. 30 Santa Rita, el Torno', 'Coordinador: Paul Salonero<br>Teléfono: 382 23 36', 'alalay.jpg' );
-INSERT INTO `bib_center` VALUES(4, 'Asociación Mi Rancho', 'Asociación Mi Rancho', '', '', 'mi_rancho.jpg');
-INSERT INTO `bib_center` VALUES(18, 'Mi Rancho','4', 'Carretera Cotoca Km 18,<br>detras del surtidor de la Virgen Cotoca<br>Director: Gregorio Monroy<br>Teléfono: 388 20 92', 'Gregorio Monrroy Toledano', 'mi_rancho.jpg');
-INSERT INTO `bib_center` VALUES(19, 'Pahuichi','4', 'Barrio Guapilo Norte,<br>Línea 32 verde<br>Al lado CEMETRA<br>Teléfono: 349 80 11', 'Rosa Ruiz', 'mi_rancho.jpg');
-INSERT INTO `bib_center` VALUES(5, 'CALLECRUZ','0', 'Hogar La República, pasado Cotoca (16 km Las Pavas)<br>Oficina Central: Av. Piraí, Calle Mutun, # 63.', 'Directora: Cleotilde Morales Sandoval<br>Teléfono: 359 96 64<br><a href="mailto:callecruz@cotas.com.bo">callecruz@cotas.com.bo</a>', 'calle_cruz_v.jpg');
-INSERT INTO `bib_center` VALUES(6, 'Misión Timoteo Betel','0', 'Calle Tristan Roca esquina Angostura, # 191<br>Teléfono: 354 06 39<br><a href="mailto:alfredo_cvn@hotmail.com">alfredo_cvn@hotmail.com</a>', 'Alfredo Negrete', 'mision_timoteo.jpg');
-INSERT INTO `bib_center` VALUES(7, 'Proyecto Oikia','0', 'Av. Panamericana entre Av. La Campana y Radial 10<br>Plan 3000<br>Teléfono: 364 74 42<br>362 41 07<br><a href="mailto:delatraba@gmail.com">delatraba@gmail.com</a>', 'Padre Pepe Cervantes<br>Daniel de la Traba', 'oikia.jpg');
-INSERT INTO `bib_center` VALUES(8,  'Proyecto Don Bosco','0', '', 'Padre Octavio Sabaddim', 'proyecto_don_bosco.jpg');
-INSERT INTO `bib_center` VALUES(11, 'Techo Pinardi','8', 'Calle Junín # 438<br>entre la calle Santa Bárbara y la calle Sara<br>Teléfono: 3371016<br>Santa Cruz', '', 'techo_pinardi.jpg');
-INSERT INTO `bib_center` VALUES(12, 'Patio Don Bosco','8', 'Barrio 12 de Octubre<br>frente al Centro de Salud "San Carlos"<br>Teléfono: 3412693<br>Santa Cruz', '', 'db-patio-don-bosco.jpg');
-INSERT INTO `bib_center` VALUES(13, 'Hogar Granja Moglia','8', 'Carretera de Santa Cruz<br>a Montero, Km 49 al lado del Servicio Nacional de Camino<br>Teléfono 9224465', '', 'db-hogar-granja-moglia.jpg');
-INSERT INTO `bib_center` VALUES(14, 'Mano amiga','8', 'Av. Hernando Sanabria 2755<br>(ex centenario entre 2º y 3er anillo)<br>Teléfono: 3532716<br>Santa Cruz', '', 'db-mano-amiga.jpg');
-INSERT INTO `bib_center` VALUES(15, 'Hogar Don Bosco','8', 'Av. Hernando Sanabria 2775 (Ex Centenario)<br>entre 2º y 3er anillo.<br>Teléfono: 3541100<br>Santa Cruz', '', 'db-hogar-don-bosco.jpg');
-INSERT INTO `bib_center` VALUES(16, 'Barrio Juvenil','8', 'Zona La Cuchilla<br>entre Barrio España y Universidad Evangélica<br>Teléfono: 358 59 93', '', 'db-barrio-juvenil.jpg');
-INSERT INTO `bib_center` VALUES(17, 'Patio Don Bosco Defensoría','8', 'Barrio 12 de Octubre<br>frente al Centro de Salud "San Carlos"<br>Teléfono: 3412693<br>Santa Cruz', '', 'db-patio-don-bosco.jpg');
+INSERT INTO `bib_center` VALUES(1, 'Plataforma UNIDOS',1 , '', '', 'plataforma.jpg');
+INSERT INTO `bib_center` VALUES(2, 'CERENID',2,  'Calle Ballivián, 1196 Segundo Anillo Directora: María José del Pino Martín Teléfono: 335 16 44 choquita34@hotmail.com, choquita34@yahoo.com', '', 'cerenid.jpg');
+INSERT INTO `bib_center` VALUES(3, 'Alalay','3' ,'Calle Teniente Rivero #158', 'Director: Omar Herrera Teléfono: 70590727', 'alalay.jpg');
+INSERT INTO `bib_center` VALUES(20, 'Casa de niños','3' , 'Calle Teniente Rivero #158', 'Coordinadora: Vivian Montaño Teléfono: 332 72 91', 'alalay.jpg');
+INSERT INTO `bib_center` VALUES(21, 'Casa de niñas','3' , 'Calle 2 #39 Barrio Universitario entrando por el radial 19, segundo puente', 'Coordinadora: Patricia Justiniano Teléfono: 356 56 13', 'alalay.jpg');
+INSERT INTO `bib_center` VALUES(22, 'Aldea El Torno','3' , 'Antigua carretera a Cochabamba Km. 30 Santa Rita, el Torno', 'Coordinador: Paul Salonero Teléfono: 382 23 36', 'alalay.jpg' );
+INSERT INTO `bib_center` VALUES(4, 'Asociación Mi Rancho', '4', 'Asociación Mi Rancho', '', 'mi_rancho.jpg');
+INSERT INTO `bib_center` VALUES(18, 'Mi Rancho','4', 'Carretera Cotoca Km 18, detras del surtidor de la Virgen Cotoca Director: Gregorio Monroy Teléfono: 388 20 92', 'Gregorio Monrroy Toledano', 'mi_rancho.jpg');
+INSERT INTO `bib_center` VALUES(19, 'Pahuichi','4', 'Barrio Guapilo Norte, Línea 32 verde Al lado CEMETRA Teléfono: 349 80 11', 'Rosa Ruiz', 'mi_rancho.jpg');
+INSERT INTO `bib_center` VALUES(5, 'CALLECRUZ','5', 'Hogar La República, pasado Cotoca (16 km Las Pavas) Oficina Central: Av. Piraí, Calle Mutun, # 63.', 'Directora: Cleotilde Morales Sandoval Teléfono: 359 96 64 callecruz@cotas.com.bo', 'calle_cruz_v.jpg');
+INSERT INTO `bib_center` VALUES(6, 'Misión Timoteo Betel','6', 'Calle Tristan Roca esquina Angostura, # 191 Teléfono: 354 06 39 alfredo_cvn@hotmail.com', 'Alfredo Negrete', 'mision_timoteo.jpg');
+INSERT INTO `bib_center` VALUES(7, 'Proyecto Oikia','7', 'Av. Panamericana entre Av. La Campana y Radial 10 Plan 3000 Teléfono: 364 74 42 362 41 07delatraba@gmail.com', 'Padre Pepe Cervantes Daniel de la Traba', 'oikia.jpg');
+INSERT INTO `bib_center` VALUES(8,  'Proyecto Don Bosco','8', '', 'Padre Octavio Sabaddim', 'proyecto_don_bosco.jpg');
+INSERT INTO `bib_center` VALUES(11, 'Techo Pinardi','8', 'Calle Junín # 438 entre la calle Santa Bárbara y la calle Sara Teléfono: 3371016 Santa Cruz', '', 'techo_pinardi.jpg');
+INSERT INTO `bib_center` VALUES(12, 'Patio Don Bosco','8', 'Barrio 12 de Octubre frente al Centro de Salud "San Carlos" Teléfono: 3412693 Santa Cruz', '', 'db-patio-don-bosco.jpg');
+INSERT INTO `bib_center` VALUES(13, 'Hogar Granja Moglia','8', 'Carretera de Santa Cruz a Montero, Km 49 al lado del Servicio Nacional de Camino Teléfono 9224465', '', 'db-hogar-granja-moglia.jpg');
+INSERT INTO `bib_center` VALUES(14, 'Mano amiga','8', 'Av. Hernando Sanabria 2755 (ex centenario entre 2º y 3er anillo) Teléfono: 3532716 Santa Cruz', '', 'db-mano-amiga.jpg');
+INSERT INTO `bib_center` VALUES(15, 'Hogar Don Bosco','8', 'Av. Hernando Sanabria 2775 (Ex Centenario) entre 2º y 3er anillo. Teléfono: 3541100 Santa Cruz', '', 'db-hogar-don-bosco.jpg');
+INSERT INTO `bib_center` VALUES(16, 'Barrio Juvenil','8', 'Zona La Cuchilla entre Barrio España y Universidad Evangélica Teléfono: 358 59 93', '', 'db-barrio-juvenil.jpg');
+INSERT INTO `bib_center` VALUES(17, 'Patio Don Bosco Defensoría','8', 'Barrio 12 de Octubre frente al Centro de Salud "San Carlos" Teléfono: 3412693 Santa Cruz', '', 'db-patio-don-bosco.jpg');
 
 INSERT INTO bib_user VALUES(1,"admin","admin",NULL,1,1,"12341234","admin@blah.com",0);
 INSERT INTO bib_user VALUES(2,"user","user",NULL,0,1,"43214321","user@blah.com",0);

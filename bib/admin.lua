@@ -163,85 +163,67 @@ bib:dispatch_get(login_get, "/login")
 bib:dispatch_post(login_post, "/login")
 
 --- Controller for the edit pages 
-function edit_get(web,obj_type,id)
+function edit_get(web,obj_type,id) --{{{
+	print("--debug edit_get",web,obj_type,id)
 	local user = check_user(web)
 	local fields,title,object
 	if not user or user.is_admin ~= 1 then
 		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
 	else
-		if obj_type == "book" then
-			title="title"
-			fields = {
-				{name="title",caption=strings.title,["type"]="text"},
-				{name="author_id",caption=strings.author,["type"]="select",model=models.author,fields={"rest_name","last_name","id"}}, --TODO Make these fields autocomplete, and add a "new ... " link style drupal autocomplete for authors and tags
-				{name="cat_id",caption=strings.category,["type"]="select",model=models.cat,fields={"cat_text","id"}},
-				{name="isbn",caption=strings.isbn,["type"]="text"},
-				{name="abstract",caption=strings.abstract,["type"]="textarea"},
-				{name="url_ref",caption=strings.url_ref,["type"]="text"},
-				{name="url_cover",caption=strings.url_cover,["type"]="text"}
-			}
-		elseif obj_type == "page" then
-			title="title"
-			fields = {
-				{name="title",caption=strings.title,["type"]="text"},
-				{name="body",caption=strings.body,["type"]="textarea"}
-			}
-		elseif obj_type == "author" then
-			title="last_name"
-			fields = {
-				{name="last_name",caption=strings.last_name,["type"]="text"},
-				{name="rest_name",caption=strings.rest_name,["type"]="text"},
-				{name="url_ref",caption=strings.url_ref,["type"]="text"}
-			}
-		elseif obj_type == "copy" then
-			title="id"
-			fields = {
-				{name="book_id",caption=strings.book,["type"]="select",model=models.book,fields={"title","id"}},
-				{name="date_acquisition",caption=strings.date_acquisition,["type"]="text"},
-				{name="edition",caption=strings.edition, ["type"]="text"},
-				{name="price",caption=strings.price,["type"]="text"}
-			}
-		elseif obj_type == "user" then --TODO Checkme.
-			title="login"
-			fields = {
-				{name="login",caption=strings.login,["type"]="text"},
-				--{name="password",caption=strings.password,["type"]="password"},
-				{name="is_admin",caption=strings.admin,["type"]="select",options={0,1}},
-				{name="center_id",caption=strings.center,["type"]="select",model=models.center,fields={"name","id"}},
-				{name="telephone",caption=strings.telephone,["type"]="text"},
-				{name="email",caption=strings.email,["type"]="text"}, -- verify if it's a unique email in the db.
-				{name="debt",caption=strings.debt,["type"]="text"}
-			}
-		else
-			print("--debug edit","object type not found")
+		if obj_type:match("^/edit/?") then -- no extra arguments, and since there are no captures, the function get's the whole match from dispatch_get()
+			-- build list of all editable models, display the list to choose from
+			print("--debug edit_get obj_type is nill, list types")
 			return not_found(web)
-		end
-		object = models[obj_type]:find(id)
-		if not object then
-			print("--debug edit","object not found")
+		elseif not models[obj_type] then
+			print("--debug edit_get","object type not found")
+			return not_found(web)
+		elseif not models[obj_type].form then
+			print("--debug edit_get","object type doesn't have a form-table, add form table to the model")
 			return not_found(web)
 		else
-			title = object[title]
-			return render_edit(web,obj_type,object,fields,title)
+			object = models[obj_type]:find(id)
+			if not object then
+				print("--debug edit","object not found")
+				return not_found(web)
+			else
+				local form=object.form
+				return render_edit(web,obj_type,object,form.fields,object[form.title])
+			end
 		end
 	end
-end
+end --}}}
 
-function edit_post(web,obj,id)
+--- Controller for the edit pages, POST part aka form processing
+function edit_post(web,obj,id) --{{{
+	local user = check_user(web)
+	if not user or user.is_admin ~= 1 then
+		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
+	else
+		-- parse web.POST parameters
+		if web.POST.op==strings.delete then
+			return web:redirect(web:link("/delete/"..obj.name.."/"..obj.id)) -- page asking for confirmation + processing in POST
+		elseif web.POST.op==strings.save then
+			-- sanitize fields, set them, save object, if body or abstract updated -> obj:update_html(true)
+			
+		elseif web.POST.op==strings.cancel then
+			-- do nothing, just reload page
+		end
+	end
+	
+	return tprint(web):gsub("\n","<br />")
+end --}}}
 
-end
-
-bib:dispatch_get(edit_get,"/edit/(%w+)/(%d+)")
+bib:dispatch_get(edit_get,"/edit/(%w+)/(%d+)","/edit/(%w+)","/edit/?")
 bib:dispatch_post(edit_post,"/edit/(%w+)/(%d+)")
 
 function render_admin_page(web,params)
 	return h2(params)
 end
 
-function render_edit(web,obj,id,fields,title)
-	local m = models.obj
-	local tit =	h2{strings.edit," ", obj ," ",id, }
-	res={}
+function render_edit(web,obj_type,obj,fields,title) --{{{
+	local m = models.obj_type
+	local tit =	h2{strings.edit," ", obj_type ," ",obj.id,": ",title }
+	local res={tit}
 
 	for field_n=1,#fields do
 		local field=fields[field_n]
@@ -251,7 +233,11 @@ function render_edit(web,obj,id,fields,title)
 			if field.options then
 				-- construct select out of options
 				for n_opt=1,#field.options do
-					res[#res+1]=option{ value=field.options[n_opt], field.options[n_opt]}
+					local option_table = {value=field.options[n_opt], field.options[n_opt]}
+					if obj[field.name] == field.options[n_opt] then -- If this is the current value, select it, so it is default.
+						option_table.selected="selected"
+					end
+					res[#res+1]=option(option_table)
 				end
 				res[#res+1]='</select>'
 			else
@@ -268,67 +254,35 @@ function render_edit(web,obj,id,fields,title)
 				while curs:fetch(t) do
 					opts[#opts+1]={table.remove(t,1),table.concat(t,', ')} -- pop of the index, concat the rest
 				end
-				for n_opts=1,#opts do
-					res[#res+1]=option{ value=opts[n_opts][1], opts[n_opts][2]} -- Add an option for "No center" in the database, not here.
+				for n_opt=1,#opts do
+					local option_table={ value=opts[n_opt][1], opts[n_opt][2]}
+					if obj[field.name] == opts[n_opt][1] then -- If this is the current value, select it, so it is default.
+						option_table.selected="selected"
+					end
+					res[#res+1]=option(option_table)-- Add an option for "None" in the database, not here.
 				end
 				res[#res+1]='</select>'
-				-- res[#res+1]=a{ href=web:link(),strings["new_"..model] }--TODO Add link to "new ..." 
+				if field.model then
+					res[#res+1]=a{ href=web:link("/edit/"..field.model.name.."/"..obj[field.name]),strings.edit," ",strings[field.model.name]:lower()," ",obj[field.name]}
+					res[#res+1]=" "
+					res[#res+1]=a{ href=web:link("/new/"..field.model.name), strings.new, strings[field.model.name]:lower() }--TODO Add link to "new ..." 
+				end
 			end --}}}
 		elseif field["type"]=="text" then
-			res[#res+1] = input{ name = field.name, ["type"]=field["type"]}
+			res[#res+1] = input{ name = field.name, ["type"]=field["type"],value=obj[field.name]}
 		elseif field["type"]=="textarea" then
-			res[#res+1] = textarea{ name = field.name, cols="100", rows="10",style="vertical-align:middle"}
+			res[#res+1] = textarea{ name = field.name, cols="100", rows="10",style="vertical-align:middle",obj[field.name]}
 			res[#res+1] = br()
 			res[#res+1] = a{ href=web:link("/markdown",lang), target="_blank", strings.markdown_expl }
 		end	
 		res[#res+1]=br()
 	end
-	return admin_layout(web,div.group(res))
-end
-
-
--- Not yet converted further on
-function add_user_get(web)
-   if not check_user(web) then
-      return web:redirect(web:link("/login", { link_to = web:link("/adduser") }))
-   else
-      return admin_layout(web, render_add_user(web, web.input))
-   end
-end
-
-function add_user_post(web)
-   if not check_user(web) then
-      return web:redirect(web:link("/login", { link_to = web:link("/adduser") }))
-   else
-      local errors = {}
-      if web:empty_param("login") then
-	 errors.login = strings.blank_user
-      end
-      if web:empty_param("password1") then
-	 errors.password = strings.blank_password
-      end
-      if web.input.password1 ~= web.input.password2 then
-	 errors.password = strings.password_mismatch
-      end
-      if web:empty_param("name") then
-	 errors.name = strings.blank_name
-      end
-      if not next(errors) then
-	 local user = models.user:new()
-	 user.login = web.input.login
-	 user.password = web.input.password1
-	 user.name = web.input.name
-	 user:save()
-	 return web:redirect(web:link("/admin"))
-      else
-	 for k, v in pairs(errors) do web.input["error_" .. k] = v end
-	 return web:redirect(web:link("/adduser", web.input))
-      end
-   end
-end
-
-bib:dispatch_get(add_user_get, "/adduser")
-bib:dispatch_post(add_user_post, "/adduser")
+	res[#res+1]=br()
+	res[#res+1]=input{ type="submit", id="save",   name="op", value=strings.save }
+	res[#res+1]=input{ type="submit", id="cancel", name="op", value=strings.cancel }
+	res[#res+1]=input{ type="submit", id="delete", name="op", value=strings.delete }
+	return admin_layout(web,div.group(form{action=web.path_info, method="POST", res}))
+end --}}}
 
 
 -- Views
