@@ -79,22 +79,14 @@ mapper.conn = env:connect(unpack(database.conn_data))
 mapper.driver = database.driver
 
 -- SQL query sanitation and un-sanitation functions
-do
-	local sanitize_tab={"select","drop","insert","delete","update","create","pragma","alter"}
-	function luasql.sanitize(query)
-		
-	end
-
-	function luasql.desanitaize(text)
-	end
-end
+--	local sanitize_tab={"select","drop","insert","delete","update","create","pragma","alter"}
 --- Utility function to check whether a user is a user
 function check_user(web)
-	local auth = web.cookies.authentication
+	local auth = web.cookies.authentication		-- Get the authentication cookie
 	if auth then
-		local login,auth_hash =auth:match("(%w*)||(%d*)")
-		local user = models.user:find_by_login{ login }
-		if (user and auth_hash ~= user.auth) then
+		local login,auth_hash =auth:match("(%w*)||(%d*)")	-- parse the username and auth-hash (random number that get's saved to the DB for each user)
+		local user = models.user:find_by_login{ login }		-- check whether the user exists
+		if (user and auth_hash ~= user.auth) then			-- if the auth-hash does not match the saved one (forged or old cookie) -> delete it
 			-- Notice: Firefox does not delete cookies with the cookie window open (don't panic if the cookie does not instantly vanish).
 			web:delete_cookie("authentication")
 		end
@@ -114,6 +106,7 @@ models = {
 	author = bib:model "author",
 
 	user = bib:model "user",
+	center = bib:model "center",
 	lending = bib:model "lending",
 	reservation = bib:model "reservation",
 
@@ -143,10 +136,27 @@ do -- Only put the functions in the model
 	end
 end
 
-cache = orbit.cache.new(bib, cache_path)
+cache = orbit.cache.new(bib, cache_path) -- No longer used: pages where username get's displayed can't be cached.
 -- Methods for the page model / Métodos para el model "page"
+--- Updates a pages body_html from the markdown version body
+function models.page.update_html(page,force)
+	if page.body_html == "" or force then -- first time
+		page.body_html = markdown(page.body)
+		page:save()
+	end
+	return page
+end
 
 -- Methods for the Book model / Métodos para el model "book"
+--- Updates a books abstract_html from the markdown version abstract
+function models.book.update_html(book,force)
+	if book.abstract_html == "" or force then -- first time
+		book.abstract_html = markdown(book.abstract)
+		book:save()
+	end
+	return book
+end
+	
 --- Add's lot's of data from other models to the book to be returned.
 function models.book.pimp(book)
 		book.author_rest_name = models.author:find(book.author_id).rest_name
@@ -162,6 +172,7 @@ function models.book.pimp(book)
 		book.tags=tags
 		book.ncopies=#(models.copy:find_all_by_book_id({book.id})) -- TODO Add support for lend books.
 		book.cat = models.cat:find(book.cat_id).cat_text
+		book:update_html() -- updates html version of page if necessary.
 end
 	
 --- Returns the most recently added books, while adding all info needed (like Authors, tags, copies, ...)
@@ -195,12 +206,13 @@ end
 -- @params orderby Field by which to order the returned list
 -- @params order Which sense the list should be ordered: asc or desc
 function models.book:find_gen(term,criterium,orderby,order,num)
-	
+	print("find_gen not implemented")
 end
 
 --- Finds all copies of of this book.
+-- Deprecated does not get used TODO
 function models.book:find_copies()
-	return models.copy:find_by_BookID{self.id}
+	return models.copy:find_by_book_id{self.id}
 end
 
 -- Methods for the copy model / Métodos para el model "copy"
@@ -216,7 +228,7 @@ end
 
 -- Methods for the taglink model / Métodos para el model "taglink"
 
----- Initialize the template cache / Antememoria de patrones
+--{{{-- -- Initialize the template cache / Antememoria de patrones
 --local template_cache = {}
 --
 ----- Loads a template from the template directory
@@ -269,34 +281,39 @@ end
 --  end
 --
 --  return template_env
---end
+--end --}}}
 
 
 -- Controllers : gets the data together
-function index(web)
+--- Controller for the index page
+-- Get's together the most recent books and pages, and put's them in a list
+function index(web) --{{{
    local books_rec = models.book:find_recent()
    local pgs = pgs or models.page:find_all()
    local user = check_user(web)
    return render_index(web, { books = books_rec, pages = pgs, user=user})
-end
+end --}}}
 
 bib:dispatch_get(index, "/", "/index") 
 
-function view_page(web, page_id)
+--- Controller for the static pages. Get's the page and user, and displays the page if it exists
+function view_page(web, page_id) --{{{
 	local page = models.page:find(tonumber(page_id))
 	local user = check_user(web)
 	if page then
+		print("--debug view_page",tprint(page))
+		page:update_html() -- updates html from the markdown in body if necessary.
 		local pgs = models.page:find_all()
 		return render_page(web, { pages=pgs, page = page, user=user })
 	else
 		not_found(web)
 	end
-end
+end --}}}
 
 bib:dispatch_get(view_page, "/page/(%d+)")
 
--- Search page
-function search_results(web)
+--- Controller for the Search page. 
+function search_results(web) --{{{
 	-- GET parameters from the web object
 	local field_possible = {title="title",author="author",isbn="isbn",tag="tag",abstract="abstract"}
 
@@ -347,11 +364,12 @@ function search_results(web)
 		cur_book ={}
 	end
 	return render_search_results(web,{books=books_result, pages = pgs, user=user})
-end
+end --}}}
 
 bib:dispatch_get(search_results, "/search")
 
-function view_book(web, id)
+--- Controller for viewing the books (GET part)
+function view_book(web, id) --{{{
 	local user = check_user(web)
 	local book = models.book:find(id)
 	local pages = models.page:find_all()
@@ -361,8 +379,9 @@ function view_book(web, id)
 	end
 
 	return render_book(web,{book=book,user=user,pages=pages,reservation=user_res})
-end
+end --}}}
 
+--- Controller for the book processing (POST part)
 function book_post(web,book_id) --{{{
 	local user = check_user(web)
 	local result
@@ -401,12 +420,42 @@ end --}}}
 bib:dispatch_get(view_book, "/book/(%d+)")
 bib:dispatch_post(book_post, "/book/(%d+)")
 
+--- Controller for the markdown syntax part
+function markdown_syntax(web,args) --{{{
+	local user = check_user(web)
+	local pages = models.page:find_all()
+	if not lfs.attributes('static') then print("--debug markdown_syntax: static dir does not exist") end
+	local att_md,err1 = lfs.attributes("static/markdown."..language_def..".md")
+	local att_html = lfs.attributes("static/markdown."..language_def..".html")
+	local innerhtml
+	if not att_md and not att_html then -- There isn't a markdown, nor a html file -> redirect to the wikipage (if that doesn't exist, bad luck)
+		return web:redirect(web:link(strings.markdown_url))
+	elseif not att_html or att_md.modification > att_html.modification then -- Check whether html doesn't exist or is older than the markdown file
+		local fhin =io.open("static/markdown."..language_def..".md","r")
+		local md_string=fhin:read("*a")
+		fhin:close()
+		local fhout=io.open("static/markdown."..language_def..".html","w")
+		innerhtml=markdown(md_string)
+		fhout:write(innerhtml)
+		fhout:close()
+	else
+		local fhin=io.open("static/markdown."..language_def..".html")
+		innerhtml = fhin:read("*a")
+		print("--debug markdown innerhtml",fhin,innerhtml)
+		fhin:close()
+	end
+	return layout(web,{user=user;pages=pages},innerhtml)
+end --}}}
+
+bib:dispatch_get(markdown_syntax, "/markdown")
+
 -- Controllers for static content:
 -- Controladores para contenido stático:
 -- css / css
 -- images / imagenes
 -- book covers / Tapas de los libros
 bib:dispatch_static("/covers/.*%.jpg","/covers/.*%gif")
+-- Static html pages: Manuals, markdown syntax, ...
 
 -- Views for the application / Views para la aplicación
 function layout(web, args, inner_html) --{{{
@@ -512,13 +561,13 @@ function _book_short(web, book)
 	else
 		cover_img="/covers/cover0-default.gif"
 	end
-	local abstract = book.abstract:match("^(.*)<!%-%-%s*break%s*%-%->") or book.abstract
+	local abstract_html = book.abstract_html:match("^(.*)<!%-%-%s*break%s*%-%->") or book.abstract_html
 	return div.book_short{ style="clear:both",
 		h3{book.title,strings.by_author,book.author_last_name,", ",book.author_rest_name},
 		div.cover{ a{ href = web:link("/book/".. book.id), img { style="float:left", height="100px",src=web:static_link(cover_img), alt=strings.cover_of .. book.title} }},
 		div.tags{em{book.cat,class="category"},": ", table.concat(book.tags,", ") },
 		strings.copies_available .. book.ncopies,
-		markdown(abstract),
+		abstract_html,
 		--a{ href = web:link("/post/" .. post.id .. "#comments"), strings.comments ..
 		--" (" .. (post.n_comments or "0") .. ")" }
    }
@@ -527,7 +576,7 @@ end
 
 --- Renders inner html for static pages, and plugs them into the layout function
 function render_page(web, args) --{{{
-   return layout(web, args, div.blogentry(markdown(args.page.body)))
+	return layout(web, args, div.blogentry(args.page.body_html))
 end
 --}}}
 
@@ -566,7 +615,7 @@ function render_book(web, args) --{{{
 		div.cover{ a{ href = web:link("/book/".. book.id), img {height="100px", src=web:static_link(cover_img), alt=strings.cover_of .. book.title} } },
 		div.tags{ em.category {book.cat}, ": ", table.concat(book.tags,", ") },
 		strings.copies_available .. book.ncopies,
-		markdown(book.abstract)
+		book.abstract_html
 		}
 	if args.user then
 		res[#res+1]= h3(strings.user_menu)
@@ -589,18 +638,18 @@ function render_book(web, args) --{{{
 				h3(strings.admin_menu),
 				div.group{
 					h4(strings.this_book),
-					a{ href=web:link("/edit/book"..book.id, {edit=1}), strings.edit_book}," ",
-					a{ href=web:link("/edit/book"..book.id, {delete=1}), strings.delete_book}," ",
+					a{ href=web:link("/edit/book/"..book.id), strings.edit_book}," ",
+					a{ href=web:link("/delete/book/"..book.id), strings.delete_book}," ",
 					}
 				}
 			local copies = models.copy:find_all_by_book_id({book.id})
 			local copies_list = {}
 			for _,copy in pairs(copies) do
 				copies_list[#copies_list+1] = li{ book.title.." ", copy.id ," ",
-					a{ href=web:link("/edit/copy/"..copy.id,{lend=1}),	strings.lend_copy}," ",
-					a{ href=web:link("/edit/copy/"..copy.id,{["return"]=1}),	strings.return_copy}," ",
-					a{ href=web:link("/edit/copy/"..copy.id,{delete=1}),	strings.delete_copy}," ",
-					a{ href=web:link("/edit/copy/"..copy.id,{edit=1}),	strings.edit_copy},
+					a{ href=web:link("/lend/"..copy.id),	strings.lend_copy}," ",
+					a{ href=web:link("/return/"..copy.id),	strings.return_copy}," ",
+					a{ href=web:link("/edit/copy/"..copy.id),	strings.edit_copy}," ",
+					a{ href=web:link("/delete/copy/"..copy.id),	strings.delete_copy}
 					}
 			end
 			res[#res+1]=div.group{ h4(strings.copies), ul(copies_list)}

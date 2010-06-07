@@ -1,8 +1,9 @@
 -- Static Pages (help, contact, ...) / Páginas staticas (ayuda, contacto, ...)
 CREATE TABLE bib_page (
 	"id" INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+	"title" TEXT,
 	"body" TEXT,
-	"title" TEXT
+	"body_html" TEXT DEFAULT ""
 	);
 -- Book management / Gestion de libros
 CREATE TABLE bib_book (
@@ -12,6 +13,7 @@ CREATE TABLE bib_book (
 	"cat_id" INTEGER,
 	"isbn" TEXT,
 	"abstract" TEXT,
+	"abstract_html" TEXT DEFAULT "",
 	"rating" TEXT,
 	"url_ref" TEXT,
 	"url_cover" TEXT
@@ -91,7 +93,7 @@ CREATE TABLE bib_taglink (
 
 -- A testpage
 -- Una página de prueba
-INSERT INTO bib_page VALUES(1,"*It Works!*","It Works!");
+INSERT INTO bib_page VALUES(1,"It Works!","*It Works!*","");
 
 -- Some authors
 -- Unos autores
@@ -102,11 +104,11 @@ INSERT INTO bib_author VALUES (2,"Márquez","Gabriel García","http://en.wikiped
 INSERT INTO bib_cat VALUES (1,"Roman");
 INSERT INTO bib_cat VALUES (2,"Education");
 INSERT INTO bib_cat VALUES (3,"Psycology");
-INSERT INTO bib_book VALUES (1,"Sherlock Holmes: A study in scarlet",1,1,"","Classic detective story",5,"http://en.wikipedia.org/wiki/A_Study_in_Scarlet","/covers/cover1-Sherlock_Holmes_A_study_in_scarlet.jpg");
+INSERT INTO bib_book VALUES (1,"Sherlock Holmes: A study in scarlet",1,1,"","Classic detective story","",5,"http://en.wikipedia.org/wiki/A_Study_in_Scarlet","/covers/cover1-Sherlock_Holmes_A_study_in_scarlet.jpg");
 INSERT INTO bib_copy VALUES (1,1,"2010-05-15","first edition","1887-01-01",100);
-INSERT INTO bib_book VALUES (2,"Love in the Time of Cholera",2,1,"9580600007","Classic book about love",5,"http://en.wikipedia.org/wiki/Love_in_the_Time_of_Cholera","");
+INSERT INTO bib_book VALUES (2,"Love in the Time of Cholera",2,1,"9580600007","Classic book about love","",5,"http://en.wikipedia.org/wiki/Love_in_the_Time_of_Cholera","");
 INSERT INTO bib_copy VALUES (2,2,"2010-05-15","second edition","1985-01-01",200);
-INSERT INTO bib_book VALUES (3,"Chronicle of a Death Foretold",2,1,"9780140157543","The story recreates a murder that took place in Sucre, Colombia in 1951. The character named Santiago Nasar is based on a good friend from García Márquez's childhood, Cayetano Gentile Chimento. Pelayo classifies this novel as a combination of journalism, realism and detective story",5,"http://en.wikipedia.org/wiki/Gabriel_garcia_marquez","/covers/cover3-Chronicle_of_a_Death_Foretold.jpg");
+INSERT INTO bib_book VALUES (3,"Chronicle of a Death Foretold",2,1,"9780140157543","The story recreates a murder that took place in Sucre, Colombia in 1951. The character named Santiago Nasar is based on a good friend from García Márquez's childhood, Cayetano Gentile Chimento. Pelayo classifies this novel as a combination of journalism, realism and detective story","",5,"http://en.wikipedia.org/wiki/Gabriel_garcia_marquez","/covers/cover3-Chronicle_of_a_Death_Foretold.jpg");
 INSERT INTO bib_copy VALUES (3,3,"2010-05-17","second edition","1983-01-01",150);
 INSERT INTO bib_copy VALUES (4,3,"2010-05-20","third edition","1985-01-01",170);
 

@@ -21,7 +21,7 @@ require"bib.trans"
 
 -- Enable debugging functions
 -- Activar funcciones de reparación de errores
-debug = true
+-- debug = true
 
 -- Language selection, possibilities: en, es, nl
 language_def="en"

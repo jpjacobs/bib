@@ -10,3 +10,27 @@ All my notes I found out when using Orbit
 	This however does not work for :find()
 
 4.  orbit.htmlify(app, "layout", "_.+", "render_.+") is a really necessary function for render_* functions to work.
+
+5. Upon getting an error like this one:
+	There was an error in the specified application. The full error message follows:
+
+	...jpjacobs/.luarocks/share/lua/5.1//wsapi/response.lua:12: bad argument #1 to 'concat' (table expected, got nil)
+	stack traceback:
+		[C]: in function 'concat'
+		...jpjacobs/.luarocks/share/lua/5.1//wsapi/response.lua:12: in function 'write'
+		/home/jpjacobs/.luarocks/share/lua/5.1//orbit.lua:539: in function 
+		(tail call): ?
+		(tail call): ?
+	stack traceback:
+		/home/jpjacobs/.luarocks/share/lua/5.1//coxpcall.lua:24: in function 
+		(tail call): ?
+		(tail call): ?
+		(tail call): ?
+		.../jpjacobs/.luarocks/share/lua/5.1//wsapi/xavante.lua:126: in function <.../jpjacobs/.luarocks/share/lua/5.1//wsapi/xavante.lua:89>
+		(tail call): ?
+		(tail call): ?
+		(tail call): ?
+		.../jpjacobs/.luarocks/share/lua/5.1//xavante/httpd.lua:58: in function <.../jpjacobs/.luarocks/share/lua/5.1//xavante/httpd.lua:36>
+
+	Check whether your controller returns something.
+
