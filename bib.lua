@@ -102,6 +102,36 @@ function check_user(web)
 	end
 end
 
+function check_isbn(number) -- TODO move to some utility module ... --{{{
+	if not_empty(number) then
+		local num=tostring(number:gsub("[ -]",""))
+		local nt = {}
+		for num in num:gmatch("[%dxX]") do
+			nt[#nt+1]=num
+		end
+		if #num == 10 then
+			control = 11-math.fmod(10*nt[1]+9*nt[2]+8*nt[3]+7*nt[4]+6*nt[5]+5*nt[6]+4*nt[7]+3*nt[8]+2*nt[9],11)
+			if control == 10 then control="X" end
+		elseif #num == 13 then
+			control = 10-math.fmod(nt[1]+3*nt[2]+nt[3]+3*nt[4]+nt[5]+3*nt[6]+nt[7]+3*nt[8]+nt[9]+3*nt[10]+nt[11]+3*nt[12],10)
+		else
+			print("--debug isbn needs to be a 10 or 13 digit number")
+			return nil
+		end
+		if tostring(control) == nt[#nt] or tostring(control):lower() == nt[#nt] then
+			return num
+		else
+			print("--debug ISBN 10 invalid",num)
+			return num,strings.invalid_isbn
+		end
+	else
+		return "",strings.warn.isbn_missing
+	end
+end --}}}
+
+function not_empty(input)
+	return input and input~=""
+end
 
 -- Define the models to be used / Definir los modeles necesarios
 models = {
@@ -120,7 +150,165 @@ models = {
 	taglink = bib:model "taglink"
 	-- Add E-library models: Will be implemented as simple books, with the url reffering to the resource.
 }
--- Methods for all models / Métodos para todos modelos
+-- Form information for different models, used to build the edit forms and pars edit POST info. The format is straight forward.
+-- title is the field of the model used as in the page title
+-- fields is a table containing info for each field that will be editable by the administrator
+-- Each field in turn consists of:
+--		name 	: name of the field as used in the db/model
+--		caption	: the string that will be place before the field (typically coming from strings) 
+--		type	: type of the input (notice the [" "] because type is a keyword in lua). currently supported are:
+--			text		: Single line text input
+--			textarea	: multiline text input, which will be markdowned afterwards
+--			select		: drop-down selection box having 2 usages:
+--				1) provided a model, will supply id's for all items in the model, using {fields} as fields for displaying in the options
+--				2) provided a table of options, in order which can be selected (no option to change display value to other than the actual value in the DB. Will be added if needed)
+--			file		: upload a file + select url (TODO to be implemented)
+--		valid(value,obj)	: validation function and filtering function receives the field to filter/validate and needs to return the following:
+--			value : the validated and transformed value, nil if invalid and to be refused
+--			message : Warning message if needed (like when a book has an invalid isbn, which is possible)
+--
+models.book.form={ --{{{
+	title="title",
+	fields = {
+		{name="title",caption=strings.title,["type"]="text",valid=not_empty},
+		 --TODO Make these fields autocomplete, and add a "new ... " link style drupal autocomplete for authors and tags
+		{name="author_id",caption=strings.author,["type"]="select",model=models.author,fields={"rest_name","last_name","id"}},
+		{name="cat_id",caption=strings.category,["type"]="select",model=models.cat,fields={"cat_text","id"}},
+		{name="isbn",caption=strings.isbn,["type"]="text",valid=check_isbn},
+		{name="abstract",caption=strings.abstract,["type"]="textarea"},
+		{name="url_ref",caption=strings.url_ref,["type"]="text"}, -- TODO maybe add link verification?
+		{name="url_cover",caption=strings.url_cover,["type"]="text"}
+	}
+} --}}}
+models.cat.form={ --{{{
+	title="cat_text",
+	fields={{name="cat_text",caption=strings.category,["type"]="text", -- lowercase all categories
+		valid=function(cat_text,cat)
+			if not not_empty(cat_text) then return nil, strings.err.cat_text_empty end
+			local cat_text = cat_text:lower()
+			local cat_db = models.cat:find_by_cat_text(cat_text)
+			if not cat_db or cat_db.id == cat.id then
+				return cat_text
+			else
+				return nil , strings.err.cat_text_exists
+			end
+		end}}
+} --}}}
+models.tag.form={ --{{{
+	title="tag_text",
+	fields={{name="tag_text",caption=strings.tag,["type"]="text",
+		valid=function(tag_text,tag)
+			if not not_empty(tag_text) then return nil, strings.err.tag_text_empty end
+			local tag_text = tag_text:lower()
+			local tag_db = models.tag:find_by_tag_text(tag_text)
+			if not tag_db or tag_db.id == tag.id then
+				return tag_text
+			else
+				return nil , strings.err.tag_text_exists
+			end
+		end}
+	} -- lowercase all tags
+} --}}}
+models.page.form={ --{{{
+	title="title",
+	fields = {
+		{name="title",caption=strings.title,["type"]="text",valid=not_empty},
+		{name="body",caption=strings.body,["type"]="textarea"}
+	}
+}--}}}
+models.author.form={ --{{{
+	title="last_name",
+	fields = {
+		{name="last_name",caption=strings.last_name,["type"]="text",valid=not_empty},
+		{name="rest_name",caption=strings.rest_name,["type"]="text",valid=not_empty},
+		{name="url_ref",caption=strings.url_ref,["type"]="text"}
+	}
+}--}}}
+models.copy.form={--{{{
+	title="id",
+	fields = {
+		{name="book_id",caption=strings.book,["type"]="select",model=models.book,fields={"title","id"}},
+		{name="date_acquisition",caption=strings.date_acquisition,["type"]="text"}, -- TODO come up with some validation.
+		{name="edition",caption=strings.edition, ["type"]="text"},
+		{name="price",caption=strings.price,["type"]="text",valid=function(str) if not_empty(str) then return str:match("%d+%.%d+") end return "" end } --TODO look into converting this into number, for sorting.
+	}
+}--}}}
+models.user.form={--{{{
+	title="login",
+	fields = {
+		{name="login",caption=strings.login,["type"]="text",
+			valid=function(login,user)
+				if login:match("[%wéáíóúüûñ_%.%d]+") and #login>=4 then
+					local user_db = models.user:find_by_login(login,{fields={"id"}})
+					if not user or user_db.id == user.id then
+						return login
+					else
+						return nil, strings.err.login_exists
+					end
+				else
+					return nil,strings.err.login_invalid
+				end
+			end},
+		--{name="password",caption=strings.password,["type"]="password"},
+		{name="name",caption=strings.name,["type"]="text",valid=not_empty},
+		{name="is_admin",caption=strings.admin,["type"]="select",options={0,1}},
+		{name="center_id",caption=strings.center,["type"]="select",model=models.center,fields={"name","id"}},
+		{name="telephone",caption=strings.telephone,["type"]="text",
+			valid=function(tel)
+				local tel=tel:gsub("[- %(%)]","") -- remove any extra characters
+				if tel:match("%+?%d%d%d%d%d%d%d+") then -- check if there are enough digits
+					return tel
+				else
+					return nil, strings.err.telephone_malformed 
+				end
+			end},
+		{name="email",caption=strings.email,["type"]="text",
+			valid=function(email,user)
+				local email=email:match("([%w%d%._]+[%w%d]+@[%w%d]+%.[%w%d%.]+)") --TODO Make stronger, now stuf like foo..bar@mail....com are possible
+				if not email then
+					return nil, strings.err.email_malformed
+				end
+				local user_mail = models.user:find_by_email(email)
+				if not user_mail or user.id == user_mail.id then -- email address not yet used
+					return email
+				else
+					return nil, strings.err.email_exists
+				end
+				
+			end}, -- verify if it's a unique email in the db.
+		{name="debt",caption=strings.debt,["type"]="text",valid=function(debt) return debt:match("%d+%.%d+") end} --TODO look into converting this into number, for sorting
+	}
+}--}}}
+models.center.form={--{{{
+	title="name",
+	fields = {
+		{name="name",caption=strings.name,["type"]="text",valid=not_empty},
+		{name="center_id",caption=strings.subcenter_of,["type"]="select",model=models.center,fields={"name","id"}},
+		{name="address",caption=strings.address,["type"]="textarea"},
+		{name="telephone",caption=strings.telephone,["type"]="text",
+			valid=function(tel)
+				local tel=tel:gsub("[- %(%)]","") -- remove any extra characters
+				if tel and #tel>=7 then -- check if there are enough digits
+					return tel
+				else return nil, strings.err.telephone_malformed end
+			end},
+		{name="email",caption=strings.email,["type"]="text",
+			valid=function(email)
+				local email=email:match("([%w%d%._]+[%w%d]+@[%w%d]+%.[%w%d%.]+)") --TODO Make stronger, now stuf like foo..bar@mail....com are possible
+				if email then
+					return email
+				else
+					return nil,strings.err.email_malformed
+				end
+				
+			end}, -- verify if it's a unique email in the db.
+		{name="contact",caption=strings.contact_person,["type"]="textarea"},
+		--{name="logo",caption=strings.logo,["type"]="text"} --TODO not implemented
+	}
+}--}}}
+
+-- Methods for all models / Métodos para todos modelos --{{{
+
 do -- Only put the functions in the model
 	--- Makes an index out of a model
 	-- @return ret a table containing a list of letters, containing the number of
@@ -136,118 +324,56 @@ do -- Only put the functions in the model
 		end
 		return ret
 	end
+
+	--- Finds all books, with limiting,offset, and order
+	local function find_all_limit(self,orderby,order,limit,offset)
+		local orderby = self.meta[orderby] and orderby or "id" -- Only column of which we are sure that exists
+		local order = order and (order:upper():match("(ASC)") or order:upper():match("(DESC)")) or "DESC"
+		local limit = tonumber(limit) or 10
+		local offset = tonumber(offset) or 0
+
+		local query = ([[SELECT * FROM `%s` ORDER BY %s %s LIMIT %s OFFSET %s;]]):format(self.model.table_prefix..self.name,orderby,order,limit,offset) 
+		local curs,err = self.model.conn:execute(query)
+		if err then print("-- error find_all_limit ",err) end
+		local objs_result = {}
+		local cur_obj = {}
+		while curs:fetch(cur_obj,"a") do
+			setmetatable(cur_obj,{__index = models[self.name] }) -- Set the metatble to the metatable that comes with objs, enables stuff like :delete and :save
+			objs_result [#objs_result +1] = cur_obj
+			cur_obj ={}
+		end
+		return objs_result
+	end
 	-- Install method to all models / Instalar método a todos modelos
 	for k,v in pairs(models) do
 		v.index=index
+		v.find_all_limit = find_all_limit
 	end
-end
-
--- Form information for different models, used to build the edit forms and pars edit POST info. The format is straight forward.
--- title is the field of the model used as in the page title
--- fields is a table containing info for each field that will be editable by the administrator
--- Each field in turn consists of:
---		name 	: name of the field as used in the db/model
---		caption	: the string that will be place before the field (typically coming from strings) 
---		type	: type of the input (notice the [" "] because type is a keyword in lua). currently supported are:
---			text		: Single line text input
---			textarea	: multiline text input, which will be markdowned afterwards
---			select		: drop-down selection box having 2 usages:
---				1) provided a model, will supply id's for all items in the model, using {fields} as fields for displaying in the options
---				2) provided a table of options, in order which can be selected (no option to change display value to other than the actual value in the DB. Will be added if needed)
---			file		: upload a file + select url (TODO to be implemented)
---
-models.book.form={
-	title="title",
-	fields = {
-		{name="title",caption=strings.title,["type"]="text"},
-		{name="author_id",caption=strings.author,["type"]="select",model=models.author,fields={"rest_name","last_name","id"}}, --TODO Make these fields autocomplete, and add a "new ... " link style drupal autocomplete for authors and tags
-		{name="cat_id",caption=strings.category,["type"]="select",model=models.cat,fields={"cat_text","id"}},
-		{name="isbn",caption=strings.isbn,["type"]="text"},
-		{name="abstract",caption=strings.abstract,["type"]="textarea"},
-		{name="url_ref",caption=strings.url_ref,["type"]="text"},
-		{name="url_cover",caption=strings.url_cover,["type"]="text"}
-	}
-}
-
-models.cat.form={
-	title="cat_text",
-	fields={{name="cat_text",caption=strings.category,["type"]="text"}}
-}
-
-models.tag.form={
-	title="tag_text",
-	fields={{name="tag_text",caption=strings.tag,["type"]="text"}}
-}
-models.page.form={
-	title="title",
-	fields = {
-		{name="title",caption=strings.title,["type"]="text"},
-		{name="body",caption=strings.body,["type"]="textarea"}
-	}
-}
-models.author.form={
-	title="last_name",
-	fields = {
-		{name="last_name",caption=strings.last_name,["type"]="text"},
-		{name="rest_name",caption=strings.rest_name,["type"]="text"},
-		{name="url_ref",caption=strings.url_ref,["type"]="text"}
-	}
-}
-models.copy.form={
-	title="id",
-	fields = {
-		{name="book_id",caption=strings.book,["type"]="select",model=models.book,fields={"title","id"}},
-		{name="date_acquisition",caption=strings.date_acquisition,["type"]="text"},
-		{name="edition",caption=strings.edition, ["type"]="text"},
-		{name="price",caption=strings.price,["type"]="text"}
-	}
-}
-models.user.form={
-	title="login",
-	fields = {
-		{name="login",caption=strings.login,["type"]="text"},
-		--{name="password",caption=strings.password,["type"]="password"},
-		{name="is_admin",caption=strings.admin,["type"]="select",options={0,1}},
-		{name="center_id",caption=strings.center,["type"]="select",model=models.center,fields={"name","id"}},
-		{name="telephone",caption=strings.telephone,["type"]="text"},
-		{name="email",caption=strings.email,["type"]="text"}, -- verify if it's a unique email in the db.
-		{name="debt",caption=strings.debt,["type"]="text"}
-	}
-}
-models.center.form={
-	title="name",
-	fields = {
-		{name="name",caption=strings.name,["type"]="text"},
-		{name="center_id",caption=strings.subcenter_of,["type"]="select",model=models.center,fields={"name","id"}},
-		{name="address",caption=strings.address,["type"]="textarea"},
-		{name="contact",caption=strings.contact_person,["type"]="textarea"},
-		--{name="logo",caption=strings.logo,["type"]="text"} --TODO not implemented
-	}
-}
+end --}}}
 
 cache = orbit.cache.new(bib, cache_path) -- No longer used: pages where username get's displayed can't be cached.
 -- Methods for the page model / Métodos para el model "page"
 --- Updates a pages body_html from the markdown version body
-function models.page.update_html(page,force)
+function models.page.update_html(page,force) --{{{
 	if page.body_html == "" or force then -- first time
 		page.body_html = markdown(page.body)
 		page:save()
 	end
 	return page
-end
+end --}}}
 
 -- Methods for the Book model / Métodos para el model "book"
 --- Updates a books abstract_html from the markdown version abstract
-function models.book.update_html(book,force)
+function models.book.update_html(book,force) --{{{
 	if book.abstract_html == "" or force then -- first time
 		book.abstract_html = markdown(book.abstract)
 		book:save()
 	end
 	return book
-end
+end --}}}
 	
 --- Add's lot's of data from other models to the book to be returned.
-function models.book.pimp(book)
+function models.book.pimp(book) --{{{
 		book.author_rest_name = models.author:find(book.author_id).rest_name
 		book.author_last_name = models.author:find(book.author_id).last_name
 		-- Explication of next query: find all tags corresponding to this book: find all links, matching this book, and
@@ -262,10 +388,10 @@ function models.book.pimp(book)
 		book.ncopies=#(models.copy:find_all_by_book_id({book.id})) -- TODO Add support for lend books.
 		book.cat = models.cat:find(book.cat_id).cat_text
 		book:update_html() -- updates html version of page if necessary.
-end
+end --}}}
 	
 --- Returns the most recently added books, while adding all info needed (like Authors, tags, copies, ...)
-function models.book:find_recent(num)
+function models.book:find_recent(num) --{{{
 	local num = num or 10
 	local copies=models.copy:find_all("",{nil,order="date_acquisition desc",count=num,fields={"book_id","date_acquisition"}})
 	-- Will contain true for books[book_id] will containt the acquisition date if it's in the list of recently acquired copies
@@ -287,16 +413,50 @@ function models.book:find_recent(num)
 	end
 		
 	return ret
-end
+end --}}}
 
 --- General search function
--- @params term Term for which to search
--- @params criterium Field in which to look for term
+-- @params q Term for which to search
+-- @params c Field in which to look for term
 -- @params orderby Field by which to order the returned list
 -- @params order Which sense the list should be ordered: asc or desc
-function models.book:find_gen(term,criterium,orderby,order,num)
-	print("find_gen not implemented")
-end
+-- @params limit Number of results to return
+-- @params offset display from the offset'th result on
+function models.book:find_gen(q,c,orderby,order,limit,offset) --{{{
+	local books_result = {}
+	local conn = self.model.conn -- This will be the connection to make the more complex SQL calls
+	local curs,err
+	-- Check for all cases that the search criterium can be in (Explications of the SQL below).
+	-- This initializes a cursor object which will be used to fetch the books.
+	if c == "title" then
+		-- Select  where title is like the search term
+		curs,err = conn:execute(([[SELECT * FROM bib_book WHERE title LIKE '%%%s%%' ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,orderby,order,limit,offset))
+	elseif c == "author" then
+		-- Select the authors that correspond (first or rest of name) to the searchterm, and match that to the book with a JOIN)
+		curs,err = conn:execute(([[SELECT bib_book.* FROM bib_book, bib_author WHERE (bib_author.last_name LIKE '%%%s%%' OR bib_author.rest_name LIKE '%%%s%%') AND bib_book.author_id = bib_author.id ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,q,orderby,order,limit,offset))
+	elseif c == "isbn" then
+		-- Select books by isbn, but only return exact matches (other don't have much meaning) and remove any - or space that may have been in the queried ISBN
+		curs,err = conn:execute(([[SELECT * from bib_book WHERE isbn = '%s' ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q:gsub('[- ]+',''),orderby,order,limit,offset))
+	elseif c == "tag" then
+		-- Select the right tag from bib_tag, match it to books in bib_taglink, and get the info from the  books that have these tags applied.
+		curs,err = conn:execute(([[SELECT bib_book.* FROM bib_tag,bib_taglink,bib_book WHERE bib_tag.tag_text LIKE '%%%s%%' AND bib_taglink.book_id = bib_book.id AND bib_taglink.tag_id = bib_tag.id ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,orderby,order,limit,offset))
+	elseif c == "abstract" then
+		-- Select books which have the term in their abstract
+		curs,err = conn:execute(([[SELECT * FROM bib_book WHERE abstract LIKE '%%%s%%' ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,orderby,order,limit,offset))
+	else -- Should never happen, as title get's set by default higher up
+		print("Hit a bug in search_results, we should never be in something else but defined fields",debug.traceback()) 
+	end
+	if err then print("-- search result debug ERROR: ",err) end	
+	-- Start fetching all the books (stops when curs:fetch returns nil instead of the table)
+	local cur_book = {}
+	while curs:fetch(cur_book,"a") do
+		setmetatable(cur_book,{__index = models.book }) -- Set the metatble to the metatable that comes with books, enables stuff like :delete and :save
+		cur_book:pimp() -- Add extra data to the returned book
+		books_result [#books_result +1] = cur_book
+		cur_book ={}
+	end
+	return books_result
+end --}}}
 
 --- Finds all copies of of this book.
 -- Deprecated does not get used TODO
@@ -417,40 +577,11 @@ function search_results(web) --{{{
 	end
 	local orderby = field_possible[web.input.orderby:lower()] or "title"
 
-	local conn = models.book.model.conn -- This will be the connection to make the more complex SQL calls
 	local pgs = pgs or models.page:find_all()
-	local books_result = {}
 	local user = check_user(web)
-	local curs,err
-	-- Check for all cases that the search criterium can be in (Explications of the SQL below).
-	-- This initializes a cursor object which will be used to fetch the books.
-	if c == "title" then
-		-- Select  where title is like the search term
-		curs,err = conn:execute(([[SELECT * FROM bib_book WHERE title LIKE '%%%s%%' ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,orderby,order,limit,offset))
-	elseif c == "author" then
-		-- Select the authors that correspond (first or rest of name) to the searchterm, and match that to the book with a JOIN)
-		curs,err = conn:execute(([[SELECT bib_book.* FROM bib_book, bib_author WHERE (bib_author.last_name LIKE '%%%s%%' OR bib_author.rest_name LIKE '%%%s%%') AND bib_book.author_id = bib_author.id ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,q,orderby,order,limit,offset))
-	elseif c == "isbn" then
-		-- Select books by isbn, but only return exact matches (other don't have much meaning) and remove any - or space that may have been in the queried ISBN
-		curs,err = conn:execute(([[SELECT * from bib_book WHERE isbn = '%s' ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q:gsub('[- ]+',''),orderby,order,limit,offset))
-	elseif c == "tag" then
-		-- Select the right tag from bib_tag, match it to books in bib_taglink, and get the info from the  books that have these tags applied.
-		curs,err = conn:execute(([[SELECT bib_book.* FROM bib_tag,bib_taglink,bib_book WHERE bib_tag.tag_text LIKE '%%%s%%' AND bib_taglink.book_id = bib_book.id AND bib_taglink.tag_id = bib_tag.id ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,orderby,order,limit,offset))
-	elseif c == "abstract" then
-		-- Select books which have the term in their abstract
-		curs,err = conn:execute(([[SELECT * FROM bib_book WHERE abstract LIKE '%%%s%%' ORDER BY %s %s LIMIT %d OFFSET %d;]]):format(q,orderby,order,limit,offset))
-	else -- Should never happen, as title get's set by default higher up
-		print("Hit a bug in search_results, we should never be in something else but defined fields",debug.traceback()) 
-	end
-	if err then print("-- search result debug ERROR: ",err) end	
-	-- Start fetching all the books (stops when curs:fetch returns nil instead of the table)
-	local cur_book = {}
-	while curs:fetch(cur_book,"a") do
-		cur_book:pimp() -- Add extra data to the returned book
-		setmetatable(cur_book,{__index = models.book }) -- Set the metatble to the metatable that comes with books, enables stuff like :delete and :save
-		books_result [#books_result +1] = cur_book
-		cur_book ={}
-	end
+
+	books_result=models.book:find_gen(q,c,orderby,order,limit,offset)
+	
 	return render_search_results(web,{books=books_result, pages = pgs, user=user})
 end --}}}
 
@@ -586,7 +717,7 @@ function _sidebar(web, args)
 	local res
 	res={
 	li( a{ href=web:link("/"), strings.homepage_name }),
-	li( a{ href=web:link("bytag"), strings.browse_by,string.category })
+	li( a{ href=web:link("bytag"), strings.browse_by,strings.category })
 	}
 	return ul(res)
 end
@@ -625,7 +756,7 @@ function render_index(web, args) --{{{
 	}
 	local res = {searchbox}
 	if #args.books == 0 then
-		return layout(web, args, p(strings.no_books))
+		return layout(web, args, p(strings.err.no_books))
 	else
 		local cur_time -- For Grouping books bought on same date together
 		for _, book in pairs(args.books) do
@@ -690,11 +821,11 @@ function render_book(web, args) --{{{
 	if result == "reservationOK" then
 		mesg = div.mesg {strings.reservation_ok}
 	elseif result == "deleteReservationOK" then
-		mesg = div.error {strings.delete_reservation_ok}
+		mesg = div.mesg {strings.delete_reservation_ok}
 	elseif result == "doubleReservation" then
-		mesg = div.error {strings.double_reservation}
+		mesg = div.error {strings.err.double_reservation}
 	elseif result == "noReservation" then
-		mesg = div.error {strings.no_reservation}
+		mesg = div.error {strings.err.no_reservation}
 	end
 	
 	local res={mesg,

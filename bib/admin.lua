@@ -115,12 +115,12 @@ function login_get(web) -- {{{
 	-- Convert the result of a previous login to the apropriate errormessage
 	local result_login
 	if web.GET.not_found=="1" then
-		result_login = strings.user_not_found
+		result_login = strings.err.user_not_found
 	elseif web.GET.not_match=="1" then
-		result_login = strings.password_not_match
+		result_login = strings.err.wrong_password
 	elseif web.GET.not_admin=="1" then
 		print("-- login_get detected not_admin")
-		result_login = strings.not_allowed_to_administration
+		result_login = strings.err.not_allowed_to_administration
 	else
 		result_login = ""
 	end
@@ -163,8 +163,9 @@ bib:dispatch_get(login_get, "/login")
 bib:dispatch_post(login_post, "/login")
 
 --- Controller for the edit pages 
-function edit_get(web,obj_type,id) --{{{
-	print("--debug edit_get",web,obj_type,id)
+function edit_get(web,obj_type,id) --{{{ TODO split controller from view.
+	offset = tonumber(web.input.offset) or 0
+	limit = tonumber(web.input.limit) or 10
 	local user = check_user(web)
 	local fields,title,object
 	if not user or user.is_admin ~= 1 then
@@ -172,22 +173,42 @@ function edit_get(web,obj_type,id) --{{{
 	else
 		if obj_type:match("^/edit/?") then -- no extra arguments, and since there are no captures, the function get's the whole match from dispatch_get()
 			-- build list of all editable models, display the list to choose from
-			print("--debug edit_get obj_type is nill, list types")
-			return not_found(web)
-		elseif not models[obj_type] then
-			print("--debug edit_get","object type not found")
-			return not_found(web)
-		elseif not models[obj_type].form then
+			local title = h2(strings.edit_objects)
+			local res = {}
+			for name,model in pairs(models) do
+				if model.form then
+					res[#res+1] = li{ a{ href=web:link("/edit/"..name,{limit=10}), " ", strings[name]}}
+				end
+			end
+			return admin_layout(web,div.group{title,ul(res)})
+		elseif not models[obj_type] then -- There is no model named obj_type
+			print("-- debug edit_get: no model found for type ",obj_type)
+			return not_found(web) --TODO rewrite not_found to include an error message
+		elseif not models[obj_type].form then -- The model obj_type exists, but isn't editable (eg, has no form)
 			print("--debug edit_get","object type doesn't have a form-table, add form table to the model")
 			return not_found(web)
-		else
-			object = models[obj_type]:find(id)
-			if not object then
-				print("--debug edit","object not found")
-				return not_found(web)
+		else -- The obj_type exist and is editable
+			if not id then -- no id given, edit is type /edit/<object>, so list all <objects>
+				local title = h2(strings.edit," ",strings[obj_type])
+				local res = {}
+				local url = "/edit/"..obj_type.."/"
+				local list = models[obj_type]:find_all_limit(models[obj_type].form.title,"DESC",limit,offset)
+				for  item_n = 1,#list do
+					local item = list[item_n]
+					res[#res+1]= li{ a{href=web:link(url..item.id),item[item.form.title] }}
+				end
+				local prevPage = a{href=web:link(url,{offset = offset>limit and offset-limit or 0}), strings.prevPage}
+				local nextPage = a{href=web:link(url,{offset = offset+limit}), strings.nextPage}
+				return admin_layout(web,div.group{title,ul(res),br(),prevPage," ",nextPage})
 			else
-				local form=object.form
-				return render_edit(web,obj_type,object,form.fields,object[form.title])
+				object = models[obj_type]:find(id)
+				if not object then
+					print("--debug edit","object not found")
+					return not_found(web)
+				else
+					local form=object.form
+					return render_edit(web,obj_type,object,form.fields,object[form.title])
+				end
 			end
 		end
 	end
@@ -201,10 +222,18 @@ function edit_post(web,obj,id) --{{{
 	else
 		-- parse web.POST parameters
 		if web.POST.op==strings.delete then
-			return web:redirect(web:link("/delete/"..obj.name.."/"..obj.id)) -- page asking for confirmation + processing in POST
+			return web:redirect(web:link("/delete/"..obj.name.."/"..obj.id)) -- page asking for confirmation + processing in POST --TODO delete page
 		elseif web.POST.op==strings.save then
+			if not model[obj].form then print("-- debug edit_post :trying to edit an object from a non-editable model") else
 			-- sanitize fields, set them, save object, if body or abstract updated -> obj:update_html(true)
-			
+			print("boe")
+			end
+			-- fields get validated when they match the "valid" pattern in form.field
+			--
+			-- runs "update" function if field is updated (like body -> body_html conversion)
+
+
+			-- fields get filtered by the "filter" pattern in form.field
 		elseif web.POST.op==strings.cancel then
 			-- do nothing, just reload page
 		end
@@ -213,7 +242,7 @@ function edit_post(web,obj,id) --{{{
 	return tprint(web):gsub("\n","<br />")
 end --}}}
 
-bib:dispatch_get(edit_get,"/edit/(%w+)/(%d+)","/edit/(%w+)","/edit/?")
+bib:dispatch_get(edit_get,"/edit/(%w+)/(%d+)","/edit/(%w+)/?","/edit/?")
 bib:dispatch_post(edit_post,"/edit/(%w+)/(%d+)")
 
 function render_admin_page(web,params)
@@ -646,5 +675,5 @@ function render_manage_comments(web, params)
    }
 end
 --]]
-orbit.htmlify(bib, "_.+", "admin_layout","login_layout", "render_.+")
+orbit.htmlify(bib, "_.+", "admin_layout","login_layout", "render_.+","edit_get")
 -- vim:fdm=marker

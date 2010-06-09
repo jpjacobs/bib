@@ -39,6 +39,7 @@ CREATE TABLE bib_user (
 	"id" INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
 	"login" TEXT,
 	"password" TEXT,
+	"name" TEXT, -- Real name, only for displaying
 	"auth" TEXT DEFAULT NULL,
 	"is_admin" INTEGER,
 	"center_id" INTEGER, -- reference to centers table, out of the bib-system, 0 when unknown
@@ -52,6 +53,8 @@ CREATE TABLE bib_center (
 	"name" TEXT,
 	"center_id" INTEGER, -- For indicating if center depends on other center.
 	"address" TEXT,
+	"telephone" TEXT,
+	"email" TEXT,
 	"contact" TEXT,
 	"logo" TEXT
 	);
