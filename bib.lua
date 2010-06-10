@@ -129,8 +129,18 @@ function check_isbn(number) -- TODO move to some utility module ... --{{{
 	end
 end --}}}
 
+--- Returns nil if the input is nil or "" , returns input otherwise
 function not_empty(input)
-	return input and input~=""
+	if input and input ~= "" then
+		return input
+	else
+		return nil
+	end
+end
+
+--- Stupid wrapperfunction for forcing an update to the HTML from markdown code.
+function update_html(field,obj)
+	return obj:update_html(true)
 end
 
 -- Define the models to be used / Definir los modeles necesarios
@@ -166,6 +176,8 @@ models = {
 --		valid(value,obj)	: validation function and filtering function receives the field to filter/validate and needs to return the following:
 --			value : the validated and transformed value, nil if invalid and to be refused
 --			message : Warning message if needed (like when a book has an invalid isbn, which is possible)
+--		update(field,obj) : function that updates the some other field upon a change of a field in the form (eg. in pages, update the body_html from the markdown code in body)
+--			receives field, the field that triggers the update, so is in the form and obj, the object being edited.
 --
 models.book.form={ --{{{
 	title="title",
@@ -175,7 +187,7 @@ models.book.form={ --{{{
 		{name="author_id",caption=strings.author,["type"]="select",model=models.author,fields={"rest_name","last_name","id"}},
 		{name="cat_id",caption=strings.category,["type"]="select",model=models.cat,fields={"cat_text","id"}},
 		{name="isbn",caption=strings.isbn,["type"]="text",valid=check_isbn},
-		{name="abstract",caption=strings.abstract,["type"]="textarea"},
+		{name="abstract",caption=strings.abstract,["type"]="textarea",update=update_html},
 		{name="url_ref",caption=strings.url_ref,["type"]="text"}, -- TODO maybe add link verification?
 		{name="url_cover",caption=strings.url_cover,["type"]="text"}
 	}
@@ -213,7 +225,7 @@ models.page.form={ --{{{
 	title="title",
 	fields = {
 		{name="title",caption=strings.title,["type"]="text",valid=not_empty},
-		{name="body",caption=strings.body,["type"]="textarea"}
+		{name="body",caption=strings.body,["type"]="textarea",update=update_html}
 	}
 }--}}}
 models.author.form={ --{{{
@@ -238,9 +250,9 @@ models.user.form={--{{{
 	fields = {
 		{name="login",caption=strings.login,["type"]="text",
 			valid=function(login,user)
-				if login:match("[%wéáíóúüûñ_%.%d]+") and #login>=4 then
-					local user_db = models.user:find_by_login(login,{fields={"id"}})
-					if not user or user_db.id == user.id then
+				if login:match("^[%wéáíóúüûñ_%.%d]+$") and #login>=4 then
+					local user_db = models.user:find_by_login({login,fields={"id"}})
+					if not user_db or user_db.id == user.id then
 						return login
 					else
 						return nil, strings.err.login_exists
@@ -250,9 +262,9 @@ models.user.form={--{{{
 				end
 			end},
 		--{name="password",caption=strings.password,["type"]="password"},
-		{name="name",caption=strings.name,["type"]="text",valid=not_empty},
+		{name="real_name",caption=strings.name,["type"]="text",valid=not_empty},
 		{name="is_admin",caption=strings.admin,["type"]="select",options={0,1}},
-		{name="center_id",caption=strings.center,["type"]="select",model=models.center,fields={"name","id"}},
+		{name="center_id",caption=strings.center,["type"]="select",model=models.center,fields={"real_name","id"}},
 		{name="telephone",caption=strings.telephone,["type"]="text",
 			valid=function(tel)
 				local tel=tel:gsub("[- %(%)]","") -- remove any extra characters
@@ -276,14 +288,14 @@ models.user.form={--{{{
 				end
 				
 			end}, -- verify if it's a unique email in the db.
-		{name="debt",caption=strings.debt,["type"]="text",valid=function(debt) return debt:match("%d+%.%d+") end} --TODO look into converting this into number, for sorting
+		{name="debt",caption=strings.debt,["type"]="text",valid=function(debt) return debt:match("%d+%.?%d*") end} --TODO look into converting this into number, for sorting
 	}
 }--}}}
 models.center.form={--{{{
-	title="name",
+	title="real_name",
 	fields = {
-		{name="name",caption=strings.name,["type"]="text",valid=not_empty},
-		{name="center_id",caption=strings.subcenter_of,["type"]="select",model=models.center,fields={"name","id"}},
+		{name="real_name",caption=strings.name,["type"]="text",valid=not_empty},
+		{name="center_id",caption=strings.subcenter_of,["type"]="select",model=models.center,fields={"real_name","id"}},
 		{name="address",caption=strings.address,["type"]="textarea"},
 		{name="telephone",caption=strings.telephone,["type"]="text",
 			valid=function(tel)
@@ -302,10 +314,20 @@ models.center.form={--{{{
 				end
 				
 			end}, -- verify if it's a unique email in the db.
-		{name="contact",caption=strings.contact_person,["type"]="textarea"},
+		{name="contact",caption=strings.contact_person,["type"]="text"},
 		--{name="logo",caption=strings.logo,["type"]="text"} --TODO not implemented
 	}
 }--}}}
+
+-- make form fields indexable by index number as by name.
+for name,model in pairs(models) do
+	if model.form then
+		local cur_fields=model.form.fields
+		for n=1,#cur_fields do
+			cur_fields[cur_fields[n].name]=cur_fields[n]
+		end
+	end
+end
 
 -- Methods for all models / Métodos para todos modelos --{{{
 

@@ -34,3 +34,5 @@ All my notes I found out when using Orbit
 
 	Check whether your controller returns something.
 
+6. fields name, model, meta of a model are used internally, do not overwrite.
+

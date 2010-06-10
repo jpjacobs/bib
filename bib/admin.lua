@@ -164,6 +164,7 @@ bib:dispatch_post(login_post, "/login")
 
 --- Controller for the edit pages 
 function edit_get(web,obj_type,id) --{{{ TODO split controller from view.
+	-- TODO display results from editing instead of failing silently.
 	offset = tonumber(web.input.offset) or 0
 	limit = tonumber(web.input.limit) or 10
 	local user = check_user(web)
@@ -220,34 +221,156 @@ function edit_post(web,obj,id) --{{{
 	if not user or user.is_admin ~= 1 then
 		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
 	else
+		if not obj or obj:match("^/edit/?") or not id or not id:match("%d") or not models[obj]:find(id) then -- Check for editing something that does not exist
+			print("--debug edit_post, Attempting to edit a non-existing object: ",obj,id)
+			return web:redirect(web:link("/edit")) --TODO add explanation
+		end
+		-- From here on, the object_type and id should point to an existing object
+		local this_object=models[obj]:find(id)
+		local this_form=this_object.form
 		-- parse web.POST parameters
 		if web.POST.op==strings.delete then
-			return web:redirect(web:link("/delete/"..obj.name.."/"..obj.id)) -- page asking for confirmation + processing in POST --TODO delete page
-		elseif web.POST.op==strings.save then
-			if not model[obj].form then print("-- debug edit_post :trying to edit an object from a non-editable model") else
-			-- sanitize fields, set them, save object, if body or abstract updated -> obj:update_html(true)
-			print("boe")
+			return web:redirect(web:link("/delete/"..obj.."/"..id)) -- page asking for confirmation + processing in POST --TODO delete page
+		elseif web.POST.op==strings.save then --{{{
+			if not this_form then
+				print("-- debug edit_post :trying to edit an object from a non-editable model")
+				return web:redirect(web:link("/edit")) -- TODO add explanation
+			else
+				local mesg={} -- list of messages returned by validation functions
+				local obj_changed
+				for k,v in pairs(web.POST) do
+					local field_changed
+					if this_form.fields[k] then
+						print("--debug edit_post, object has a form for this field:",this_form.fields[k].name)
+						if this_form.fields[k].valid then -- Form field contains a validation function, receives string to validate/filter and the object
+							print("--debug edit_post, field "..this_form.fields[k].name.." has a validation function")
+							local dummy -- To protect the field from getting overwritten upon errors
+							dummy,mesg[#mesg+1]=this_form.fields[k].valid(v,this_object) -- if there is a message, capture and forward.
+							print("--debug edit_post, validation function returned",dummy,mesg[#mesg])
+							if dummy and tostring(this_object[k]) ~= dummy then
+								print("--debug edit_post, object valid, and new")
+								field_changed,obj_changed = true,true
+								this_object[k]=dummy
+							else
+								print("--debug edit_post, the value ",v," was not valid, or not new")
+							end
+						else -- no validation function present for this field
+							print("--debug edit_post, field "..this_form.fields[k].name.." does not have a validation function")
+							if tostring(this_object[k])~=v then -- the value is new
+								print("--debug edit_post, the new value ",v,"differs from the old one",this_object[k])
+								field_changed,obj_changed = true,true
+								this_object[k]=v 
+							end
+						end
+						if this_form.fields[k].update and field_changed then -- Field has an update function
+							print("--debug edit_post, field "..this_form[k].name.." has an updatefield")
+							this_form.fields[k].update(k,this_object)
+						end
+					end
+				end
+				if obj_changed then -- The object changed, so save it.
+					print("--debug edit_post, there have been changes to the object ",this_object.name,this_object.id,", saving changes")
+					this_object:save()
+				end
 			end
-			-- fields get validated when they match the "valid" pattern in form.field
-			--
-			-- runs "update" function if field is updated (like body -> body_html conversion)
-
-
-			-- fields get filtered by the "filter" pattern in form.field
+			return web:redirect(web:link("/edit/"..obj.."/"..id),{mesg=mesg}) --}}}
 		elseif web.POST.op==strings.cancel then
-			-- do nothing, just reload page
+			return web:redirect(web:link("/edit/"..obj))
 		end
 	end
-	
 	return tprint(web):gsub("\n","<br />")
 end --}}}
 
 bib:dispatch_get(edit_get,"/edit/(%w+)/(%d+)","/edit/(%w+)/?","/edit/?")
 bib:dispatch_post(edit_post,"/edit/(%w+)/(%d+)")
+ 
+--- Controller for delete page, GET part
+function delete_get(web,obj,id) --{{{
+	local user = check_user(web)
+	if not user or user.is_admin ~= 1 then
+		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
+	else
+		if not models[obj] then
+			return not_found(web)
+		else
+			local fields,title,object
+			object = models[obj]:find(id)
+			if not object then
+				return not_found(web)
+			else
+				return render_delete(web,object)
+			end
+		end
+	end
+end --}}}
 
-function render_admin_page(web,params)
-	return h2(params)
+--- Controller for the delete page, POST part
+function delete_post(web,obj,id) --{{{
+	local user = check_user(web)
+	local fields,title,object
+	if not user or user.is_admin ~= 1 then
+		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
+	else
+		if not models[obj] then
+			return not_found(web)
+		else
+			local fields,title,object
+			object = models[obj]:find(id)
+			if not object then
+				return not_found(web)
+			else
+				object:delete() -- BIG TODO : What to do with orphanaged things, like books without authors, ... -> maybe warn in delete_get about dependancies.
+				return web:redirect(web:link("/edit/"..obj)) --TODO pass suitable message
+			end
+		end
+	end
+end --}}}
+
+bib:dispatch_get(delete_get,"/delete/(%w+)/(%d+)")
+bib:dispatch_post(delete_post,"/delete/(%w+)/(%d+)")
+
+function new_get(web,obj)
+	local user = check_user(web)
+	local fields,title,object
+	if not user or user.is_admin ~= 1 then
+		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
+	else
+		if obj:match("^new/?$") then -- We're doing the generic /new or /new/ page here -> return a list of object types
+			local title = h2(strings.edit_objects)
+			local res = {}
+			for name,model in pairs(models) do
+				if model.form then
+					res[#res+1] = li{ a{ href=web:link("/edit/"..name,{limit=10}), " ", strings[name]}}
+				end
+			end
+			return admin_layout(web,div.group{title,ul(res)})
+		elseif not models[obj] then
+			print("-- debug new_get, no model exists for",obj)
+		elseif not models[obj].form then
+			print("-- debug new_get, the model does not have a form")
+		else -- The model really is editable etc etc TODO TODO
+			models[obj]:new()
+			
+		print("debug new_get",obj)
+	end
 end
+
+function new_post(web,obj)
+	local user = check_user(web)
+	local fields,title,object
+	if not user or user.is_admin ~= 1 then
+		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
+	else
+	end
+end
+
+bib:dispatch_get(new_get,"/new/(%w+)","/new/?")
+bib:dispatch_post(new_post,"/new/(%w+)")
+
+function render_admin_page(web,params) --{{{
+	print("render_admin_page, stub")
+	return h2(params)
+end --}}}
 
 function render_edit(web,obj_type,obj,fields,title) --{{{
 	local m = models.obj_type
@@ -277,7 +400,11 @@ function render_edit(web,obj_type,obj,fields,title) --{{{
 				query[3]=" FROM "
 				query[4]=field.model.table_name
 				query[5]=";"
-				local curs = field.model.model.conn:execute(table.concat(query))
+				local curs,mess = field.model.model.conn:execute(table.concat(query))
+				if mess then
+					print("--Debug edit_get",mess,field.fields,field.model.table_name)
+				end
+
 				local opts = {} -- table which will contain the strings for the selectionbox
 				local t = {} -- result table
 				while curs:fetch(t) do
@@ -313,9 +440,21 @@ function render_edit(web,obj_type,obj,fields,title) --{{{
 	return admin_layout(web,div.group(form{action=web.path_info, method="POST", res}))
 end --}}}
 
+--- Renders the delete page
+function render_delete(web,object) --{{{
+	local res = {
+		h2{strings.delete, " ", strings[object.name]:lower(), " ", object.id,": ",object[object.form.title]},
+		div.group{(strings.confirm_delete:gsub("@(%w)",{a=object[object.form.title],b=object.name,c=object.id}))},
+		form{ action = web.path_info, method = "POST",
+			input{ type="submit", id="cancel", name="op", value=strings.cancel},
+			input{ type="submit", id="delete", name="op", value=strings.delete}
+		}
+	}
+	return admin_layout(web,res)
+end --}}}
 
 -- Views
-function login_layout(web, params)
+function login_layout(web, params) --{{{
 	return html{
 		head{
 			title{strings.login_page},
@@ -346,10 +485,10 @@ function login_layout(web, params)
 			}
 		}
 	}
-end
+end --}}}
 
 --- View-template for the adminpages, inner_html being render_admin or whatever.
-function admin_layout(web, inner_html)
+function admin_layout(web, inner_html) --{{{
 	return html{
 		head{
 			title{"Bib.lua ",strings.administration},
@@ -392,9 +531,9 @@ function _admin_menu(web)
 		res[#res + 1] = ul(table.concat(section_list,"\n"))
 	end
 	return table.concat(res, "\n")
-end
+end --}}}
 
-function render_admin(web, params)
+function render_admin(web, params) --{{{ TODO zet om
    local section_list
    local sections = models.section:find_all({ order = "id asc" })
    if params.section then
@@ -450,9 +589,9 @@ function render_admin(web, params)
       section_list = strings.no_sections
    end
    return div(section_list)
-end
+end --}}}
 
-function render_login(web, params)
+function render_login(web, params) --{{{
    local res = {}
    local err_msg = ""
    if params.not_match then
@@ -476,7 +615,7 @@ function render_login(web, params)
       }
    }
    return div(res)
-end
+end --}}}
 
 --[[ TODO up to here
 function render_add_user(web, params)
