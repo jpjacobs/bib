@@ -195,11 +195,11 @@ models.book.form={ --{{{
 models.cat.form={ --{{{
 	title="cat_text",
 	fields={{name="cat_text",caption=strings.category,["type"]="text", -- lowercase all categories
-		valid=function(cat_text,cat)
-			if not not_empty(cat_text) then return nil, strings.err.cat_text_empty end
+		valid=function(cat_text)
+			if not not_empty(cat_text,cat) then return nil, strings.err.cat_text_empty end
 			local cat_text = cat_text:lower()
 			local cat_db = models.cat:find_by_cat_text(cat_text)
-			if not cat_db or cat_db.id == cat.id then
+			if not cat_db or (cat and cat_db.id == cat.id) then
 				return cat_text
 			else
 				return nil , strings.err.cat_text_exists

@@ -165,8 +165,8 @@ bib:dispatch_post(login_post, "/login")
 --- Controller for the edit pages 
 function edit_get(web,obj_type,id) --{{{ TODO split controller from view.
 	-- TODO display results from editing instead of failing silently.
-	offset = tonumber(web.input.offset) or 0
-	limit = tonumber(web.input.limit) or 10
+	local offset = tonumber(web.input.offset) or 0
+	local limit = tonumber(web.input.limit) or 10
 	local user = check_user(web)
 	local fields,title,object
 	if not user or user.is_admin ~= 1 then
@@ -192,7 +192,7 @@ function edit_get(web,obj_type,id) --{{{ TODO split controller from view.
 			if not id then -- no id given, edit is type /edit/<object>, so list all <objects>
 				local title = h2(strings.edit," ",strings[obj_type])
 				local res = {}
-				local url = "/edit/"..obj_type.."/"
+				local url = web.path_info:gsub("/+$","").."/" -- Strip extra // and make sure there is 1
 				local list = models[obj_type]:find_all_limit(models[obj_type].form.title,"DESC",limit,offset)
 				for  item_n = 1,#list do
 					local item = list[item_n]
@@ -202,13 +202,18 @@ function edit_get(web,obj_type,id) --{{{ TODO split controller from view.
 				local nextPage = a{href=web:link(url,{offset = offset+limit}), strings.nextPage}
 				return admin_layout(web,div.group{title,ul(res),br(),prevPage," ",nextPage})
 			else
-				object = models[obj_type]:find(id)
-				if not object then
-					print("--debug edit","object not found")
-					return not_found(web)
-				else
-					local form=object.form
-					return render_edit(web,obj_type,object,form.fields,object[form.title])
+				local object = models[obj_type]:find(id)
+				local form=models[obj_type].form
+				print("--debug edit_get object is",object,tprint(form))
+				if not object then -- The object does not exist in the db
+					if web.input.create ~= "1" then -- we're not creating a new object
+						print("--debug edit object not found and create ~= 1")
+						return not_found(web)
+					end
+					return render_edit(web,obj_type,object,form.fields,models[obj_type][form.title])
+				else --Object exists
+					print("--debug edit_get ",obj_type,object,tprint(form.fields),models[obj_type].form.title)
+					return render_edit(web,obj_type,object,form.fields,models[obj_type][form.title])
 				end
 			end
 		end
@@ -221,16 +226,32 @@ function edit_post(web,obj,id) --{{{
 	if not user or user.is_admin ~= 1 then
 		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
 	else
-		if not obj or obj:match("^/edit/?") or not id or not id:match("%d") or not models[obj]:find(id) then -- Check for editing something that does not exist
+		local this_object
+		if not obj or obj:match("^/edit/?$") or not id or not id:match("%d") then -- Check for editing something that does not exist
 			print("--debug edit_post, Attempting to edit a non-existing object: ",obj,id)
 			return web:redirect(web:link("/edit")) --TODO add explanation
 		end
+		if web.POST.create=="1" then
+			print("--debug edit_post , created new object")
+			this_object=models[obj]:new() --make a new object
+			this_object:save() -- pass the new option to edit_get so if necessary fields remain empty, or the editing is canceled, the object is deleted
+		elseif not models[obj]:find(id) then
+			print("--debug edit_post, Attempting to edit non-existing object, and create~= 1")
+			print(tprint(web.POST),tprint(web.GET))
+			return web:redirect(web:link("/edit/"..obj))
+		else -- the object is not newly created and, it exists
+			this_object=models[obj]:find(id)
+		end
 		-- From here on, the object_type and id should point to an existing object
-		local this_object=models[obj]:find(id)
-		local this_form=this_object.form
+		local this_form=models[obj].form
 		-- parse web.POST parameters
 		if web.POST.op==strings.delete then
-			return web:redirect(web:link("/delete/"..obj.."/"..id)) -- page asking for confirmation + processing in POST --TODO delete page
+			if web.POST.create == "1" then
+				this_object:delete()
+				return web:redirect(web:link("/edit/"..obj))
+			else
+				return web:redirect(web:link("/delete/"..obj.."/"..id)) -- page asking for confirmation + processing in POST --TODO delete page
+			end
 		elseif web.POST.op==strings.save then --{{{
 			if not this_form then
 				print("-- debug edit_post :trying to edit an object from a non-editable model")
@@ -275,6 +296,9 @@ function edit_post(web,obj,id) --{{{
 			end
 			return web:redirect(web:link("/edit/"..obj.."/"..id),{mesg=mesg}) --}}}
 		elseif web.POST.op==strings.cancel then
+			if web.POST.create == "1" then
+				this_object:delete()
+			end
 			return web:redirect(web:link("/edit/"..obj))
 		end
 	end
@@ -329,56 +353,62 @@ end --}}}
 bib:dispatch_get(delete_get,"/delete/(%w+)/(%d+)")
 bib:dispatch_post(delete_post,"/delete/(%w+)/(%d+)")
 
-function new_get(web,obj)
+function new_get(web,obj) --{{{
+	local offset = tonumber(web.input.offset) or 0
+	local limit = tonumber(web.input.limit) or 10
 	local user = check_user(web)
 	local fields,title,object
 	if not user or user.is_admin ~= 1 then
 		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
 	else
-		if obj:match("^new/?$") then -- We're doing the generic /new or /new/ page here -> return a list of object types
+		if obj:match("^/new/?$") then -- We're doing the generic /new or /new/ page here -> return a list of object types
+			-- TODO split off view for render_generic_new from the controller
+			print("--debug new_get, we matched the generic new page!") 
 			local title = h2(strings.edit_objects)
 			local res = {}
 			for name,model in pairs(models) do
 				if model.form then
-					res[#res+1] = li{ a{ href=web:link("/edit/"..name,{limit=10}), " ", strings[name]}}
+					res[#res+1] = li{ a{ href=web:link("/new/"..name), " ", strings[name]}}
 				end
 			end
-			return admin_layout(web,div.group{title,ul(res)})
+			local prevPage = a{href=web:link(web.path_info,{offset = offset>limit and offset-limit or 0}), strings.prevPage}
+			local nextPage = a{href=web:link(web.path_info,{offset = offset+limit}), strings.nextPage}
+			return admin_layout(web,div.group{title,ul(res),br(),prevPage," ",nextPage})
 		elseif not models[obj] then
 			print("-- debug new_get, no model exists for",obj)
 		elseif not models[obj].form then
 			print("-- debug new_get, the model does not have a form")
 		else -- The model really is editable etc etc TODO TODO
-			models[obj]:new()
-			
-		print("debug new_get",obj)
+			print("-- debug new_get, Your're new",obj, "will be ready soon!")
+			-- Get the last assigned autoid, and add 1 to it... will work fine until after 9223372036854775807 inserts in a table ... which I hope no one ever has to enter ;)
+			local curs,mess = models[obj].model.conn:execute(([[SELECT seq FROM sqlite_sequence WHERE name = '%s%s']]):format(models[obj].model.table_prefix,models[obj].name))
+			local new_id = curs:fetch()+1
+			if mess then print("-- debug new_get",obj,"max(id) returned",mess) end 
+			return web:redirect(web:link(("/edit/%s/%s"):format(obj,new_id),{create=1}))
+		end
 	end
-end
-
-function new_post(web,obj)
-	local user = check_user(web)
-	local fields,title,object
-	if not user or user.is_admin ~= 1 then
-		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
-	else
-	end
-end
+end --}}}
 
 bib:dispatch_get(new_get,"/new/(%w+)","/new/?")
-bib:dispatch_post(new_post,"/new/(%w+)")
 
 function render_admin_page(web,params) --{{{
 	print("render_admin_page, stub")
 	return h2(params)
 end --}}}
 
-function render_edit(web,obj_type,obj,fields,title) --{{{
+function render_edit(web,obj_type,obj,fields) --{{{
 	local m = models.obj_type
-	local tit =	h2{strings.edit," ", obj_type ," ",obj.id,": ",title }
+	local tit
+	if obj then -- not editing a newly created object
+		tit = h2{strings.edit," ", strings[obj_type] ," ",obj.id,": ",obj[obj.form.title] }
+	else
+		tit = h2{strings.create_new," ",strings[obj_type]}
+	end	
 	local res={tit}
 
 	for field_n=1,#fields do
 		local field=fields[field_n]
+		local prevVal = obj and obj[field.name] or "" -- fill the undefined values
 		res[#res+1] = field.caption
 		if field["type"]=="select" then --{{{
 			res[#res+1]='<select name="'..field.name..'">'
@@ -386,7 +416,8 @@ function render_edit(web,obj_type,obj,fields,title) --{{{
 				-- construct select out of options
 				for n_opt=1,#field.options do
 					local option_table = {value=field.options[n_opt], field.options[n_opt]}
-					if obj[field.name] == field.options[n_opt] then -- If this is the current value, select it, so it is default.
+					print("prevVal,field.options[n_opt]",type(prevVal),type(field.options[n_opt]))
+					if field.options[n_opt] == prevVal then -- If this is the current value, select it, so it is default.
 						option_table.selected="selected"
 					end
 					res[#res+1]=option(option_table)
@@ -412,26 +443,29 @@ function render_edit(web,obj_type,obj,fields,title) --{{{
 				end
 				for n_opt=1,#opts do
 					local option_table={ value=opts[n_opt][1], opts[n_opt][2]}
-					if obj[field.name] == opts[n_opt][1] then -- If this is the current value, select it, so it is default.
+					if prevVal == opts[n_opt][1] then -- If this is the current value, select it, so it is default.
 						option_table.selected="selected"
 					end
 					res[#res+1]=option(option_table)-- Add an option for "None" in the database, not here.
 				end
 				res[#res+1]='</select>'
 				if field.model then
-					res[#res+1]=a{ href=web:link("/edit/"..field.model.name.."/"..obj[field.name]),strings.edit," ",strings[field.model.name]:lower()," ",obj[field.name]}
+					res[#res+1]=a{ href=web:link("/edit/"..field.model.name.."/"..prevVal),strings.edit," ",strings[field.model.name]:lower()," ",prevVal}
 					res[#res+1]=" "
 					res[#res+1]=a{ href=web:link("/new/"..field.model.name), strings.new, strings[field.model.name]:lower() }--TODO Add link to "new ..." 
 				end
 			end --}}}
 		elseif field["type"]=="text" then
-			res[#res+1] = input{ name = field.name, ["type"]=field["type"],value=obj[field.name]}
+			res[#res+1] = input{ name = field.name, ["type"]=field["type"],value=prevVal}
 		elseif field["type"]=="textarea" then
-			res[#res+1] = textarea{ name = field.name, cols="100", rows="10",style="vertical-align:middle",obj[field.name]}
+			res[#res+1] = textarea{ name = field.name, cols="100", rows="10",style="vertical-align:middle",prevVal}
 			res[#res+1] = br()
 			res[#res+1] = a{ href=web:link("/markdown",lang), target="_blank", strings.markdown_expl }
 		end	
 		res[#res+1]=br()
+	end
+	if web.input.create=="1" then -- pass the value from create on to the edit_post via the form.
+		res[#res+1]=input{ type="hidden",name="create", value ="1"}
 	end
 	res[#res+1]=br()
 	res[#res+1]=input{ type="submit", id="save",   name="op", value=strings.save }
@@ -814,5 +848,5 @@ function render_manage_comments(web, params)
    }
 end
 --]]
-orbit.htmlify(bib, "_.+", "admin_layout","login_layout", "render_.+","edit_get")
+orbit.htmlify(bib, "_.+", "admin_layout","login_layout", "render_.+","edit_get","new_get")
 -- vim:fdm=marker
