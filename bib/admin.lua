@@ -190,13 +190,13 @@ function edit_get(web,obj_type,id) --{{{ TODO split controller from view.
 			return not_found(web)
 		else -- The obj_type exist and is editable
 			if not id then -- no id given, edit is type /edit/<object>, so list all <objects>
-				local title = h2(strings.edit," ",strings[obj_type])
+				local title = h2{strings.edit," ",strings[obj_type]}
 				local res = {}
 				local url = web.path_info:gsub("/+$","").."/" -- Strip extra // and make sure there is 1
-				local list = models[obj_type]:find_all_limit(models[obj_type].form.title,"DESC",limit,offset)
+				local list = models[obj_type]:find_all_limit(models[obj_type].form.title[1],"DESC",limit,offset)
 				for  item_n = 1,#list do
 					local item = list[item_n]
-					res[#res+1]= li{ a{href=web:link(url..item.id),item[item.form.title] }}
+					res[#res+1]= li{ a{href=web:link(url..item.id),item:concat_fields(item.form.title) }}
 				end
 				local prevPage = a{href=web:link(url,{offset = offset>limit and offset-limit or 0}), strings.prevPage}
 				local nextPage = a{href=web:link(url,{offset = offset+limit}), strings.nextPage}
@@ -204,16 +204,14 @@ function edit_get(web,obj_type,id) --{{{ TODO split controller from view.
 			else
 				local object = models[obj_type]:find(id)
 				local form=models[obj_type].form
-				print("--debug edit_get object is",object,tprint(form))
 				if not object then -- The object does not exist in the db
 					if web.input.create ~= "1" then -- we're not creating a new object
 						print("--debug edit object not found and create ~= 1")
 						return not_found(web)
 					end
-					return render_edit(web,obj_type,object,form.fields,models[obj_type][form.title])
+					return render_edit(web,obj_type,object,form.fields)
 				else --Object exists
-					print("--debug edit_get ",obj_type,object,tprint(form.fields),models[obj_type].form.title)
-					return render_edit(web,obj_type,object,form.fields,models[obj_type][form.title])
+					return render_edit(web,obj_type,object,form.fields)
 				end
 			end
 		end
@@ -226,18 +224,18 @@ function edit_post(web,obj,id) --{{{
 	if not user or user.is_admin ~= 1 then
 		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
 	else
+--		print("--debug edit_post, web.POST=",tprint(web.POST))
 		local this_object
 		if not obj or obj:match("^/edit/?$") or not id or not id:match("%d") then -- Check for editing something that does not exist
-			print("--debug edit_post, Attempting to edit a non-existing object: ",obj,id)
+			print("--warn edit_post, Attempting to edit a non-existing object: ",obj,id)
 			return web:redirect(web:link("/edit")) --TODO add explanation
 		end
 		if web.POST.create=="1" then
-			print("--debug edit_post , created new object")
+--			print("--debug edit_post , created new object")
 			this_object=models[obj]:new() --make a new object
 			this_object:save() -- pass the new option to edit_get so if necessary fields remain empty, or the editing is canceled, the object is deleted
 		elseif not models[obj]:find(id) then
-			print("--debug edit_post, Attempting to edit non-existing object, and create~= 1")
-			print(tprint(web.POST),tprint(web.GET))
+			print("--warn edit_post, Attempting to edit non-existing object, and create~= 1")
 			return web:redirect(web:link("/edit/"..obj))
 		else -- the object is not newly created and, it exists
 			this_object=models[obj]:find(id)
@@ -254,7 +252,7 @@ function edit_post(web,obj,id) --{{{
 			end
 		elseif web.POST.op==strings.save then --{{{
 			if not this_form then
-				print("-- debug edit_post :trying to edit an object from a non-editable model")
+				print("-- warn edit_post :trying to edit an object from a non-editable model")
 				return web:redirect(web:link("/edit")) -- TODO add explanation
 			else
 				local mesg={} -- list of messages returned by validation functions
@@ -262,37 +260,42 @@ function edit_post(web,obj,id) --{{{
 				for k,v in pairs(web.POST) do
 					local field_changed
 					if this_form.fields[k] then
-						print("--debug edit_post, object has a form for this field:",this_form.fields[k].name)
+--						if this_form.fields[k].autogen then FIXME deprecated, autogenned stuf happens in render_edit
+--							v=this_form.fields[k].autogen(this_object) --replace v; so if the field has a valid function, it still runs
+----							print("--debug edit_post, autogen", v)
+--						end
+--						print("--debug edit_post, object has a form for this field:",this_form.fields[k].name)
 						if this_form.fields[k].valid then -- Form field contains a validation function, receives string to validate/filter and the object
-							print("--debug edit_post, field "..this_form.fields[k].name.." has a validation function")
+--							print("--debug edit_post, field "..this_form.fields[k].name.." has a validation function")
 							local dummy -- To protect the field from getting overwritten upon errors
 							dummy,mesg[#mesg+1]=this_form.fields[k].valid(v,this_object) -- if there is a message, capture and forward.
-							print("--debug edit_post, validation function returned",dummy,mesg[#mesg])
+--							print("--debug edit_post, validation function returned",dummy,mesg[#mesg])
 							if dummy and tostring(this_object[k]) ~= dummy then
-								print("--debug edit_post, object valid, and new")
+--								print("--debug edit_post, object valid, and new")
 								field_changed,obj_changed = true,true
 								this_object[k]=dummy
 							else
-								print("--debug edit_post, the value ",v," was not valid, or not new")
+--								print("--debug edit_post, the value ",v," was not valid, or not new")
 							end
 						else -- no validation function present for this field
-							print("--debug edit_post, field "..this_form.fields[k].name.." does not have a validation function")
+--							print("--debug edit_post, field "..this_form.fields[k].name.." does not have a validation function")
 							if tostring(this_object[k])~=v then -- the value is new
-								print("--debug edit_post, the new value ",v,"differs from the old one",this_object[k])
+--								print("--debug edit_post, the new value ",v,"differs from the old one",this_object[k])
 								field_changed,obj_changed = true,true
 								this_object[k]=v 
 							end
 						end
 						if this_form.fields[k].update and field_changed then -- Field has an update function
-							print("--debug edit_post, field "..this_form[k].name.." has an updatefield")
+--							print("--debug edit_post, field "..this_form.fields[k].name.." has an updatefield")
 							this_form.fields[k].update(k,this_object)
 						end
 					end
 				end
-				if obj_changed then -- The object changed, so save it.
-					print("--debug edit_post, there have been changes to the object ",this_object.name,this_object.id,", saving changes")
+		--		if obj_changed then -- The object changed, so save it. FIXME deprecated
+		--			print("--debug edit_post, there have been changes to the object ",this_object.name,this_object.id,", saving changes")
 					this_object:save()
-				end
+--					print("--debug edit_post, Object saved")
+		--		end
 			end
 			return web:redirect(web:link("/edit/"..obj.."/"..id),{mesg=mesg}) --}}}
 		elseif web.POST.op==strings.cancel then
@@ -317,8 +320,7 @@ function delete_get(web,obj,id) --{{{
 		if not models[obj] then
 			return not_found(web)
 		else
-			local fields,title,object
-			object = models[obj]:find(id)
+			local object = models[obj]:find(id)
 			if not object then
 				return not_found(web)
 			else
@@ -331,15 +333,13 @@ end --}}}
 --- Controller for the delete page, POST part
 function delete_post(web,obj,id) --{{{
 	local user = check_user(web)
-	local fields,title,object
 	if not user or user.is_admin ~= 1 then
 		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
 	else
 		if not models[obj] then
 			return not_found(web)
 		else
-			local fields,title,object
-			object = models[obj]:find(id)
+			local object = models[obj]:find(id)
 			if not object then
 				return not_found(web)
 			else
@@ -357,7 +357,7 @@ function new_get(web,obj) --{{{
 	local offset = tonumber(web.input.offset) or 0
 	local limit = tonumber(web.input.limit) or 10
 	local user = check_user(web)
-	local fields,title,object
+	local fields,object
 	if not user or user.is_admin ~= 1 then
 		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
 	else
@@ -378,29 +378,71 @@ function new_get(web,obj) --{{{
 			print("-- debug new_get, no model exists for",obj)
 		elseif not models[obj].form then
 			print("-- debug new_get, the model does not have a form")
-		else -- The model really is editable etc etc TODO TODO
+		else -- The model really is editable
 			print("-- debug new_get, Your're new",obj, "will be ready soon!")
 			-- Get the last assigned autoid, and add 1 to it... will work fine until after 9223372036854775807 inserts in a table ... which I hope no one ever has to enter ;)
 			local curs,mess = models[obj].model.conn:execute(([[SELECT seq FROM sqlite_sequence WHERE name = '%s%s']]):format(models[obj].model.table_prefix,models[obj].name))
 			local new_id = curs:fetch()+1
 			if mess then print("-- debug new_get",obj,"max(id) returned",mess) end 
-			return web:redirect(web:link(("/edit/%s/%s"):format(obj,new_id),{create=1}))
+			if models[obj].form.depends then
+				local depends = models[obj].form.depends.."_id"
+				if web.GET[depends] then -- if the dependancy already has been provided to the new call, then pass it to the edit page.
+					return web:redirect(web:link(("/edit/%s/%s"):format(obj,new_id),{create=1,[depends]=web.GET[depends]}))
+				else
+					return web:redirect(web:link(("/depends/%s/%s"):format(obj,new_id)))
+				end
+			else
+				return web:redirect(web:link(("/edit/%s/%s"):format(obj,new_id),{create=1}))
+			end
 		end
 	end
 end --}}}
 
-bib:dispatch_get(new_get,"/new/(%w+)","/new/?")
+bib:dispatch_get(new_get,"/new/(%w+)/?","/new/?")
+
+--- Controller for the dependancy control for making a new object (like a book for a copy)
+function depends_get(web,obj,new_id) --{{{
+	local user = check_user(web)
+	local fields,object
+	if not user or user.is_admin ~= 1 then
+		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
+	else
+		if obj:match("^/depends/?$") then
+			print("--debug depends_get, we need a model for dependancy checking")
+			return web:redirect("/new")
+		elseif not models[obj] then
+			print("--debug depends_get, model does not exist")
+			return web:redirect("/new")
+		elseif not models[obj].form then
+			print("--debug depends_get, model does not have a form")
+			return web:redirect("/new")
+		elseif not models[obj].form.depends then
+			print("--debug depends_get, model has no dependancies")
+			return web:redirect("/new/"..obj)
+		elseif not new_id then
+			print("--debug depends_get, we do need the new id number of what is getting created")
+			return web:redirect("/new/")
+		else
+			local depends = models[obj].form.depends
+			local objects = models[depends]:find_all()
+			return render_depends(web,obj,new_id,objects,depends)	
+		end
+		return not_found(web)
+	end
+end --}}}
+
+bib:dispatch_get(depends_get,"/depends/(%w+)/(%d+)/?")
 
 function render_admin_page(web,params) --{{{
 	print("render_admin_page, stub")
 	return h2(params)
 end --}}}
 
-function render_edit(web,obj_type,obj,fields) --{{{
+function render_edit(web,obj_type,obj,fields) --{{{ fields now is a table of fields.
 	local m = models.obj_type
 	local tit
 	if obj then -- not editing a newly created object
-		tit = h2{strings.edit," ", strings[obj_type] ," ",obj.id,": ",obj[obj.form.title] }
+		tit = h2{strings.edit," ", strings[obj_type] ," ",obj.id,": ",obj:concat_fields(obj.form.title,", ") }
 	else
 		tit = h2{strings.create_new," ",strings[obj_type]}
 	end	
@@ -408,16 +450,20 @@ function render_edit(web,obj_type,obj,fields) --{{{
 
 	for field_n=1,#fields do
 		local field=fields[field_n]
+		local readonly -- Contains whether this controll will be readonly because a matching GET parameter was found
 		local prevVal = obj and obj[field.name] or "" -- fill the undefined values
+		if web.GET[field.name] then
+			prevVal = web.GET[field.name]
+			readonly="readonly"
+		end
 		res[#res+1] = field.caption
 		if field["type"]=="select" then --{{{
-			res[#res+1]='<select name="'..field.name..'">'
+			res[#res+1]=('<select name="%s" %s>'):format(field.name,readonly and 'readonly="readonly"' or "")
 			if field.options then
 				-- construct select out of options
 				for n_opt=1,#field.options do
 					local option_table = {value=field.options[n_opt], field.options[n_opt]}
-					print("prevVal,field.options[n_opt]",type(prevVal),type(field.options[n_opt]))
-					if field.options[n_opt] == prevVal then -- If this is the current value, select it, so it is default.
+					if tostring(field.options[n_opt]) == tostring(prevVal) then -- If this is the current value, select it, so it is default.
 						option_table.selected="selected"
 					end
 					res[#res+1]=option(option_table)
@@ -443,7 +489,7 @@ function render_edit(web,obj_type,obj,fields) --{{{
 				end
 				for n_opt=1,#opts do
 					local option_table={ value=opts[n_opt][1], opts[n_opt][2]}
-					if prevVal == opts[n_opt][1] then -- If this is the current value, select it, so it is default.
+					if tostring(prevVal) == tostring(opts[n_opt][1]) then -- If this is the current value, select it, so it is default.
 						option_table.selected="selected"
 					end
 					res[#res+1]=option(option_table)-- Add an option for "None" in the database, not here.
@@ -452,13 +498,15 @@ function render_edit(web,obj_type,obj,fields) --{{{
 				if field.model then
 					res[#res+1]=a{ href=web:link("/edit/"..field.model.name.."/"..prevVal),strings.edit," ",strings[field.model.name]:lower()," ",prevVal}
 					res[#res+1]=" "
-					res[#res+1]=a{ href=web:link("/new/"..field.model.name), strings.new, strings[field.model.name]:lower() }--TODO Add link to "new ..." 
+					res[#res+1]=a{ href=web:link("/new/"..field.model.name), strings.new, strings[field.model.name]:lower() }
 				end
 			end --}}}
 		elseif field["type"]=="text" then
-			res[#res+1] = input{ name = field.name, ["type"]=field["type"],value=prevVal}
+			res[#res+1] = input{ name = field.name, ["type"]=field["type"],value=prevVal,readonly=readonly}
+		elseif field["type"]=="readonly" then
+			res[#res+1] = input{ name = field.name, readonly="readonly", ["type"]="text",value=prevVal~="" and prevVal or field.autogen(models[obj_type],obj,web.GET)} --TODO TODO
 		elseif field["type"]=="textarea" then
-			res[#res+1] = textarea{ name = field.name, cols="100", rows="10",style="vertical-align:middle",prevVal}
+			res[#res+1] = textarea{ name = field.name, cols="100", rows="10",style="vertical-align:middle",readonly=readonly,prevVal}
 			res[#res+1] = br()
 			res[#res+1] = a{ href=web:link("/markdown",lang), target="_blank", strings.markdown_expl }
 		end	
@@ -472,19 +520,6 @@ function render_edit(web,obj_type,obj,fields) --{{{
 	res[#res+1]=input{ type="submit", id="cancel", name="op", value=strings.cancel }
 	res[#res+1]=input{ type="submit", id="delete", name="op", value=strings.delete }
 	return admin_layout(web,div.group(form{action=web.path_info, method="POST", res}))
-end --}}}
-
---- Renders the delete page
-function render_delete(web,object) --{{{
-	local res = {
-		h2{strings.delete, " ", strings[object.name]:lower(), " ", object.id,": ",object[object.form.title]},
-		div.group{(strings.confirm_delete:gsub("@(%w)",{a=object[object.form.title],b=object.name,c=object.id}))},
-		form{ action = web.path_info, method = "POST",
-			input{ type="submit", id="cancel", name="op", value=strings.cancel},
-			input{ type="submit", id="delete", name="op", value=strings.delete}
-		}
-	}
-	return admin_layout(web,res)
 end --}}}
 
 -- Views
@@ -649,6 +684,34 @@ function render_login(web, params) --{{{
       }
    }
    return div(res)
+end --}}}
+--- Renders the delete page
+function render_delete(web,object) --{{{
+	local res = {
+		h2{strings.delete, " ", strings[object.name]:lower(), " ", object.id,": ",object:concat_fields(object.form.title,", ")},
+		div.group{(strings.confirm_delete:gsub("@(%w)",{a=object:concat_fields(object.form.title," ,"),b=object.name,c=object.id}))},
+		form{ action = web.path_info, method = "POST",
+			input{ type="submit", id="cancel", name="op", value=strings.cancel},
+			input{ type="submit", id="delete", name="op", value=strings.delete}
+		}
+	}
+	return admin_layout(web,res)
+end --}}}
+
+--- Renders the dependancy resolution page
+function render_depends(web,obj_type,new_id,objects,depends) --{{{
+	local title = h2(strings.dependancy_title)
+	local expl_text = div.mesg(strings.dependancy_expl:gsub("@(%w)",{a=strings[obj_type],b=strings[depends]}))
+	local form_tab = {input{type="hidden",name="create",value="1"},('<select name=%s%s>'):format(depends,"_id")}
+	local obj_form = models[depends].form
+	for n_obj=1,#objects do
+		form_tab[#form_tab+1]=option{value=objects[n_obj].id, objects[n_obj]:concat_fields(obj_form.title)}
+	end
+	print(table.concat(form_tab,"\n"))
+	form_tab[#form_tab+1] = '</select>'
+	form_tab[#form_tab+1] = input{ type="submit", id="submit", value=strings.confirm}
+	print(form{form_tab})
+	return admin_layout(web,{title,expl_text,form{action=web:link(("/edit/%s/%s"):format(obj_type,new_id)),method="GET",form_tab}})
 end --}}}
 
 --[[ TODO up to here

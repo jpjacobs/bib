@@ -161,8 +161,9 @@ models = {
 	-- Add E-library models: Will be implemented as simple books, with the url reffering to the resource.
 }
 -- Form information for different models, used to build the edit forms and pars edit POST info. The format is straight forward.
--- title is the field of the model used as in the page title
--- fields is a table containing info for each field that will be editable by the administrator
+-- "title" is the field of the model used as in the page title
+-- "depends" is a string containing a model from which one instance is needed to be selected, via web.GET[form.depends] or will be asked when creating a new object of this type.
+-- "fields" is a table containing info for each field that will be editable by the administrator
 -- Each field in turn consists of:
 --		name 	: name of the field as used in the db/model
 --		caption	: the string that will be place before the field (typically coming from strings) 
@@ -173,11 +174,14 @@ models = {
 --				1) provided a model, will supply id's for all items in the model, using {fields} as fields for displaying in the options
 --				2) provided a table of options, in order which can be selected (no option to change display value to other than the actual value in the DB. Will be added if needed)
 --			file		: upload a file + select url (TODO to be implemented)
+--			readonly	: a read-only text
 --		valid(value,obj)	: validation function and filtering function receives the field to filter/validate and needs to return the following:
 --			value : the validated and transformed value, nil if invalid and to be refused
 --			message : Warning message if needed (like when a book has an invalid isbn, which is possible)
 --		update(field,obj) : function that updates the some other field upon a change of a field in the form (eg. in pages, update the body_html from the markdown code in body)
 --			receives field, the field that triggers the update, so is in the form and obj, the object being edited.
+--		autogen(obj_type,object,get)	: Autogenerates the field, given the object type (for new objects), the object self (if existing), get, the web.GET variables passed
+--											on to the page. Currently used for copy_nr.
 --
 models.book.form={ --{{{
 	title="title",
@@ -194,32 +198,36 @@ models.book.form={ --{{{
 } --}}}
 models.cat.form={ --{{{
 	title="cat_text",
-	fields={{name="cat_text",caption=strings.category,["type"]="text", -- lowercase all categories
-		valid=function(cat_text)
-			if not not_empty(cat_text,cat) then return nil, strings.err.cat_text_empty end
-			local cat_text = cat_text:lower()
-			local cat_db = models.cat:find_by_cat_text(cat_text)
-			if not cat_db or (cat and cat_db.id == cat.id) then
-				return cat_text
-			else
-				return nil , strings.err.cat_text_exists
-			end
-		end}}
+	fields={
+		{name="cat_text",caption=strings.category,["type"]="text", -- lowercase all categories
+			valid=function(cat_text,cat)
+				if not not_empty(cat_text,cat) then return nil, strings.err.cat_text_empty end
+				local cat_text = cat_text:lower()
+				local cat_db = models.cat:find_by_cat_text({cat_text})
+				print("--debug cat.form.valid ",cat_text, cat_db and tprint(cat_db), tprint(cat), cat_db and cat_db.id, cat.id)
+				if not cat_db or (cat and cat_db.id == cat.id) then
+					return cat_text
+				else
+					return nil , strings.err.cat_text_exists
+				end
+			end}
+		}
 } --}}}
 models.tag.form={ --{{{
 	title="tag_text",
-	fields={{name="tag_text",caption=strings.tag,["type"]="text",
-		valid=function(tag_text,tag)
-			if not not_empty(tag_text) then return nil, strings.err.tag_text_empty end
-			local tag_text = tag_text:lower()
-			local tag_db = models.tag:find_by_tag_text(tag_text)
-			if not tag_db or tag_db.id == tag.id then
-				return tag_text
-			else
-				return nil , strings.err.tag_text_exists
-			end
-		end}
-	} -- lowercase all tags
+	fields={
+		{name="tag_text",caption=strings.tag,["type"]="text",
+			valid=function(tag_text,tag)
+				if not not_empty(tag_text) then return nil, strings.err.tag_text_empty end
+				local tag_text = tag_text:lower() -- lowercase all tags
+				local tag_db = models.tag:find_by_tag_text(tag_text)
+				if not tag_db or tag_db.id == tag.id then
+					return tag_text
+				else
+					return nil , strings.err.tag_text_exists
+				end
+			end}
+	}
 } --}}}
 models.page.form={ --{{{
 	title="title",
@@ -229,7 +237,7 @@ models.page.form={ --{{{
 	}
 }--}}}
 models.author.form={ --{{{
-	title="last_name",
+	title={"last_name","rest_name",sep=", "},
 	fields = {
 		{name="last_name",caption=strings.last_name,["type"]="text",valid=not_empty},
 		{name="rest_name",caption=strings.rest_name,["type"]="text",valid=not_empty},
@@ -237,16 +245,25 @@ models.author.form={ --{{{
 	}
 }--}}}
 models.copy.form={--{{{
-	title="id",
+	title={"book_id","copy_nr",sep="/"},
+	depends="book",
 	fields = {
 		{name="book_id",caption=strings.book,["type"]="select",model=models.book,fields={"title","id"}},
+		{name="copy_nr",caption=strings.copy_nr,["type"]="readonly",
+			autogen = function(copy_model,copy,get)
+				if copy or not get then print("-- debug copy, something fishy going on!") end
+				local depends=copy_model.form.depends
+				local prevCopy = copy_model:find_first("book_id=?",{tonumber(get.book_id),fields={"MAX(copy_nr)"}})
+				local prevNr = prevCopy and prevCopy["MAX(copy_nr)"] or 0
+				return prevNr + 1
+			end},
 		{name="date_acquisition",caption=strings.date_acquisition,["type"]="text"}, -- TODO come up with some validation.
 		{name="edition",caption=strings.edition, ["type"]="text"},
-		{name="price",caption=strings.price,["type"]="text",valid=function(str) if not_empty(str) then return str:match("%d+%.%d+") end return "" end } --TODO look into converting this into number, for sorting.
+		{name="price",caption=strings.price,["type"]="text",valid=function(str) if not_empty(str) then return str:match("%d+%.?%d*") end return "" end } --TODO look into converting this into number, for sorting.
 	}
 }--}}}
 models.user.form={--{{{
-	title="login",
+	title={"login","real_name",sep=": "},
 	fields = {
 		{name="login",caption=strings.login,["type"]="text",
 			valid=function(login,user)
@@ -261,7 +278,7 @@ models.user.form={--{{{
 					return nil,strings.err.login_invalid
 				end
 			end},
-		--{name="password",caption=strings.password,["type"]="password"},
+		--{name={"password",caption=strings.password,["type"]="password"}},
 		{name="real_name",caption=strings.name,["type"]="text",valid=not_empty},
 		{name="is_admin",caption=strings.admin,["type"]="select",options={0,1}},
 		{name="center_id",caption=strings.center,["type"]="select",model=models.center,fields={"real_name","id"}},
@@ -366,10 +383,24 @@ do -- Only put the functions in the model
 		end
 		return objs_result
 	end
+	
+	--- Concatenates the values of the fields which names are listed in the table "fields" from self, seperated by the string in fields.sep.
+	local function concat_fields(self, fields)
+		if type(fields) ~= "table" then
+			return self[fields]
+		else
+			local res={}
+			for k=1,#fields do
+				res[#res+1]=self[fields[k]]
+			end
+			return table.concat(res,fields.sep)
+		end
+	end
 	-- Install method to all models / Instalar método a todos modelos
 	for k,v in pairs(models) do
-		v.index=index
-		v.find_all_limit = find_all_limit
+		v.index				= index
+		v.find_all_limit	= find_all_limit
+		v.concat_fields		= concat_fields
 	end
 end --}}}
 
