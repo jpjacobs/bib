@@ -82,6 +82,7 @@ function admin(web,params) --{{{
 --		addauthor=render_addauthor,
 --		editauthor=render_editauthor,
 	local user=check_user(web)
+	local pages=models.page:find_all()
 	-- If the user is not set/known, then redirect to the login page
 	if not user then
 		return web:redirect(web:link("/login", { link_to = web:link("/admin") }))
@@ -89,14 +90,14 @@ function admin(web,params) --{{{
 		-- If the user is an admin, redirect to the admin page
 		if user.is_admin == 1 then
 			if params==nil then
-				return admin_layout(web, render_admin(web, params))
+				return admin_layout(web,{user=user,pages=pages}, render_admin(web, args, params))
 			-- Received a capture, indicating that 
 			else
 				local page_requested=adminPageList[params:match("(%w+)")]
 				local params_pass
 				if page_requested then
 					params_pass = params:match("%w+/(.+)")
-					return admin_layout(web,_M["render_admin_".. page_requested ](web,params_pass))
+					return admin_layout(web,{user=user,pages=pages},_M["render_admin_".. page_requested ](web,params_pass))
 				else
 					return not_found
 				end
@@ -108,7 +109,7 @@ function admin(web,params) --{{{
 	end
 end --}}}
 
-bib:dispatch_get(admin, "/admin","/admin/(%w+.+)")
+bib:dispatch_get(admin, "/admin")--,"/admin/(%w+.+)")
 
 --- Controller for the GET part of the login page
 function login_get(web) -- {{{
@@ -168,6 +169,7 @@ function edit_get(web,obj_type,id) --{{{ TODO split controller from view.
 	local offset = tonumber(web.input.offset) or 0
 	local limit = tonumber(web.input.limit) or 10
 	local user = check_user(web)
+	local pages = models.page:find_all()
 	local fields,title,object
 	if not user or user.is_admin ~= 1 then
 		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
@@ -181,7 +183,7 @@ function edit_get(web,obj_type,id) --{{{ TODO split controller from view.
 					res[#res+1] = li{ a{ href=web:link("/edit/"..name,{limit=10}), " ", strings[name]}}
 				end
 			end
-			return admin_layout(web,div.group{title,ul(res)})
+			return admin_layout(web,{user=user,pages=pages},div.group{title,ul(res)})
 		elseif not models[obj_type] then -- There is no model named obj_type
 			print("-- debug edit_get: no model found for type ",obj_type)
 			return not_found(web) --TODO rewrite not_found to include an error message
@@ -193,14 +195,14 @@ function edit_get(web,obj_type,id) --{{{ TODO split controller from view.
 				local title = h2{strings.edit," ",strings[obj_type]}
 				local res = {}
 				local url = web.path_info:gsub("/+$","").."/" -- Strip extra // and make sure there is 1
-				local list = models[obj_type]:find_all_limit(models[obj_type].form.title[1],"DESC",limit,offset)
+				local list = models[obj_type]:find_all_limit(nil,models[obj_type].form.title[1],"ASC",limit,offset)
 				for  item_n = 1,#list do
 					local item = list[item_n]
 					res[#res+1]= li{ a{href=web:link(url..item.id),item:concat_fields(item.form.title) }}
 				end
 				local prevPage = a{href=web:link(url,{offset = offset>limit and offset-limit or 0}), strings.prevPage}
 				local nextPage = a{href=web:link(url,{offset = offset+limit}), strings.nextPage}
-				return admin_layout(web,div.group{title,ul(res),br(),prevPage," ",nextPage})
+				return admin_layout(web,{user=user,pages=pages},div.group{title,ul(res),br(),prevPage," ",nextPage})
 			else
 				local object = models[obj_type]:find(id)
 				local form=models[obj_type].form
@@ -209,9 +211,9 @@ function edit_get(web,obj_type,id) --{{{ TODO split controller from view.
 						print("--debug edit object not found and create ~= 1")
 						return not_found(web)
 					end
-					return render_edit(web,obj_type,object,form.fields)
+					return render_edit(web,{user=user,pages=pages},obj_type,object,form.fields)
 				else --Object exists
-					return render_edit(web,obj_type,object,form.fields)
+					return render_edit(web,{user=user,pages=pages},obj_type,object,form.fields)
 				end
 			end
 		end
@@ -314,6 +316,7 @@ bib:dispatch_post(edit_post,"/edit/(%w+)/(%d+)")
 --- Controller for delete page, GET part
 function delete_get(web,obj,id) --{{{
 	local user = check_user(web)
+	local pages = models.page:find_all()
 	if not user or user.is_admin ~= 1 then
 		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
 	else
@@ -324,7 +327,7 @@ function delete_get(web,obj,id) --{{{
 			if not object then
 				return not_found(web)
 			else
-				return render_delete(web,object)
+				return render_delete(web,{pages=pages, user=user} ,object)
 			end
 		end
 	end
@@ -357,6 +360,7 @@ function new_get(web,obj) --{{{
 	local offset = tonumber(web.input.offset) or 0
 	local limit = tonumber(web.input.limit) or 10
 	local user = check_user(web)
+	local pages= models.page:find_all()
 	local fields,object
 	if not user or user.is_admin ~= 1 then
 		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
@@ -373,7 +377,7 @@ function new_get(web,obj) --{{{
 			end
 			local prevPage = a{href=web:link(web.path_info,{offset = offset>limit and offset-limit or 0}), strings.prevPage}
 			local nextPage = a{href=web:link(web.path_info,{offset = offset+limit}), strings.nextPage}
-			return admin_layout(web,div.group{title,ul(res),br(),prevPage," ",nextPage})
+			return admin_layout(web,{user=user,pages=pages},div.group{title,ul(res),br(),prevPage," ",nextPage})
 		elseif not models[obj] then
 			print("-- debug new_get, no model exists for",obj)
 		elseif not models[obj].form then
@@ -403,6 +407,7 @@ bib:dispatch_get(new_get,"/new/(%w+)/?","/new/?")
 --- Controller for the dependancy control for making a new object (like a book for a copy)
 function depends_get(web,obj,new_id) --{{{
 	local user = check_user(web)
+	local pages = models.page:find_all()
 	local fields,object
 	if not user or user.is_admin ~= 1 then
 		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
@@ -425,7 +430,7 @@ function depends_get(web,obj,new_id) --{{{
 		else
 			local depends = models[obj].form.depends
 			local objects = models[depends]:find_all()
-			return render_depends(web,obj,new_id,objects,depends)	
+			return render_depends(web,{user=user,pages=pages},obj,new_id,objects,depends)	
 		end
 		return not_found(web)
 	end
@@ -433,12 +438,12 @@ end --}}}
 
 bib:dispatch_get(depends_get,"/depends/(%w+)/(%d+)/?")
 
-function render_admin_page(web,params) --{{{
+function render_admin_page(web,args,params) --{{{
 	print("render_admin_page, stub")
 	return h2(params)
 end --}}}
 
-function render_edit(web,obj_type,obj,fields) --{{{ fields now is a table of fields.
+function render_edit(web,args,obj_type,obj,fields) --{{{ fields now is a table of fields.
 	local m = models.obj_type
 	local tit
 	if obj then -- not editing a newly created object
@@ -519,7 +524,7 @@ function render_edit(web,obj_type,obj,fields) --{{{ fields now is a table of fie
 	res[#res+1]=input{ type="submit", id="save",   name="op", value=strings.save }
 	res[#res+1]=input{ type="submit", id="cancel", name="op", value=strings.cancel }
 	res[#res+1]=input{ type="submit", id="delete", name="op", value=strings.delete }
-	return admin_layout(web,div.group(form{action=web.path_info, method="POST", res}))
+	return admin_layout(web,args,div.group(form{action=web.path_info, method="POST", res}))
 end --}}}
 
 -- Views
@@ -557,7 +562,11 @@ function login_layout(web, params) --{{{
 end --}}}
 
 --- View-template for the adminpages, inner_html being render_admin or whatever.
-function admin_layout(web, inner_html) --{{{
+function admin_layout(web, args, inner_html) --{{{
+	-- Args needed are:
+	-- 	pages = all pages in the DB
+	-- 	user = logged in user
+	--
 	return html{
 		head{
 			title{"Bib.lua ",strings.administration},
@@ -567,18 +576,8 @@ function admin_layout(web, inner_html) --{{{
 		body{
 			div{ id = "container",
 				div{ id = "header", title = "sitename", "Bib.lua ",strings.administration },
-				div{ id = "mainnav",
-					ul {
-						li{ a{ href = web:link("/admin"), strings.admin_home } },
-						li{ a{ href = web:link("/page"), strings.pagina } },
-					--[[	li{ a{ href = web:link("/adduser"), strings.new_user } },
-						-- TODO add, change links
-						li{ a{ href = web:link("/editsection"), strings.new_section } },
-						li{ a{ href = web:link("/editpost"), strings.new_post } },
-						li{ a{ href = web:link("/comments"), strings.manage_comments } },--]]
-					}
-				}, 
-				div{ id = "menu", _admin_menu(web, args) },  
+				div{ id = "menu", _menu(web,args) }, -- Uses the same _menu as in layout
+				div{ id = "sidebar", _admin_sidebar(web, args) },  
 				div{ id = "contents", inner_html },
 				div{ id = "footer", markdown(strings.copyright_notice) }
 			}
@@ -586,11 +585,14 @@ function admin_layout(web, inner_html) --{{{
 	} 
 end
 
-function _admin_menu(web)
+function _admin_sidebar(web,args)
 	local res = {}
-	local user = check_user(web)
 	if user then
-		res[#res + 1] = ul{ li{ strings.logged_in_as, user.login } }
+		res[#res + 1] = ul{
+			li{ a{ href = web:link("/admin")	, strings.admin_home } },
+			li{ a{ href = web:link("/new")		, strings.new,strings.object } },
+			li{ a{ href = web:link("/edit")		, strings.edit,strings.object } },
+			}
 		res[#res + 1] = h3(strings.sections)
 		local section_list = {}
 		for section,name in ipairs({page=strings.page}) do
@@ -602,7 +604,7 @@ function _admin_menu(web)
 	return table.concat(res, "\n")
 end --}}}
 
-function render_admin(web, params) --{{{ TODO zet om
+function render_admin(web,args, params) --{{{ TODO zet om
    local section_list
    local sections = models.section:find_all({ order = "id asc" })
    if params.section then
@@ -660,7 +662,7 @@ function render_admin(web, params) --{{{ TODO zet om
    return div(section_list)
 end --}}}
 
-function render_login(web, params) --{{{
+function render_login(web,args,params) --{{{
    local res = {}
    local err_msg = ""
    if params.not_match then
@@ -686,7 +688,7 @@ function render_login(web, params) --{{{
    return div(res)
 end --}}}
 --- Renders the delete page
-function render_delete(web,object) --{{{
+function render_delete(web,args,object) --{{{
 	local res = {
 		h2{strings.delete, " ", strings[object.name]:lower(), " ", object.id,": ",object:concat_fields(object.form.title,", ")},
 		div.group{(strings.confirm_delete:gsub("@(%w)",{a=object:concat_fields(object.form.title," ,"),b=object.name,c=object.id}))},
@@ -695,11 +697,11 @@ function render_delete(web,object) --{{{
 			input{ type="submit", id="delete", name="op", value=strings.delete}
 		}
 	}
-	return admin_layout(web,res)
+	return admin_layout(web,args,res)
 end --}}}
 
 --- Renders the dependancy resolution page
-function render_depends(web,obj_type,new_id,objects,depends) --{{{
+function render_depends(web,args,obj_type,new_id,objects,depends) --{{{
 	local title = h2(strings.dependancy_title)
 	local expl_text = div.mesg(strings.dependancy_expl:gsub("@(%w)",{a=strings[obj_type],b=strings[depends]}))
 	local form_tab = {input{type="hidden",name="create",value="1"},('<select name=%s%s>'):format(depends,"_id")}
@@ -711,7 +713,7 @@ function render_depends(web,obj_type,new_id,objects,depends) --{{{
 	form_tab[#form_tab+1] = '</select>'
 	form_tab[#form_tab+1] = input{ type="submit", id="submit", value=strings.confirm}
 	print(form{form_tab})
-	return admin_layout(web,{title,expl_text,form{action=web:link(("/edit/%s/%s"):format(obj_type,new_id)),method="GET",form_tab}})
+	return admin_layout(web,args,{title,expl_text,form{action=web:link(("/edit/%s/%s"):format(obj_type,new_id)),method="GET",form_tab}})
 end --}}}
 
 --[[ TODO up to here

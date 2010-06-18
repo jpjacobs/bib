@@ -365,13 +365,14 @@ do -- Only put the functions in the model
 	end
 
 	--- Finds all books, with limiting,offset, and order
-	local function find_all_limit(self,orderby,order,limit,offset)
+	local function find_all_limit(self,where,orderby,order,limit,offset)
+		local where = where or "1=1"
 		local orderby = self.meta[orderby] and orderby or "id" -- Only column of which we are sure that exists
 		local order = order and (order:upper():match("(ASC)") or order:upper():match("(DESC)")) or "DESC"
 		local limit = tonumber(limit) or 10
 		local offset = tonumber(offset) or 0
 
-		local query = ([[SELECT * FROM `%s` ORDER BY %s %s LIMIT %s OFFSET %s;]]):format(self.model.table_prefix..self.name,orderby,order,limit,offset) 
+		local query = ([[SELECT * FROM `%s` WHERE %s ORDER BY %s %s LIMIT %s OFFSET %s;]]):format(self.model.table_prefix..self.name,where,orderby,order,limit,offset) 
 		local curs,err = self.model.conn:execute(query)
 		if err then print("-- error find_all_limit ",err) end
 		local objs_result = {}
@@ -620,10 +621,10 @@ function search_results(web) --{{{
 
 	local c = field_possible[web.input.c:lower()] or "title"-- The search criterium
 	local q = web.input.q:gsub("'","''") -- The search query, aka search term TODO : optimize sanitation
-	local limit = tonumber(web.input.limit) 
-	limit = limit and limit >= 0 or 10 -- The maximum number of results to return (number or nil)
-	local offset = tonumber(web.input.offset)
-	offset = offset and offset >=0 or 0 -- The offset from book 0 (number or nil)
+	local limit = tonumber(web.input.limit) or 10
+	limit = limit >= 0 and limit or 10 -- The maximum number of results to return (number or nil)
+	local offset = tonumber(web.input.offset) or 0
+	offset = offset >=0 and offset or 0 -- The offset from book 0 (number or nil)
 	local order = web.input.order or "ASC" -- The order ASC or DESC
 	if order:upper() ~= "ASC" and order:upper() ~="DESC" then -- Only allow asc or desc
 		order = "ASC"
@@ -643,14 +644,32 @@ bib:dispatch_get(search_results, "/search")
 --- Controller for viewing the books (GET part)
 function view_book(web, id) --{{{
 	local user = check_user(web)
-	local book = models.book:find(id)
 	local pages = models.page:find_all()
-	book:pimp()
-	if user then
-		local user_res=models.reservation:find_by_book_id_and_user_id({book_id,user.id})
-	end
+	if id:match("%d+") then
+		local book = models.book:find(id)
+		book:pimp()
+		if user then
+			local user_res=models.reservation:find_by_book_id_and_user_id({book_id,user.id})
+		end
 
-	return render_book(web,{book=book,user=user,pages=pages,reservation=user_res})
+		return render_book(web,{book=book,user=user,pages=pages,reservation=user_res})
+	else
+		local fields = {title="title",author="author",isbn="isbn",tag="tag",abstract="abstract"}
+		local orderby = web.input.orderby and web.input.orderby:lower() or "title"-- The search criterium
+		local order = web.input.order or "ASC"
+		local limit = tonumber(web.input.limit) or 10
+		local offset = tonumber(web.input.offset) or 0
+		-- Sanitation of the parameters
+		orderby = fields[orderby] or "title"
+		if order:upper() ~= "ASC" and order:upper() ~="DESC" then -- Only allow asc or desc
+			order = "ASC"
+		end
+		limit = limit >= 0 and limit or 10 -- The maximum number of results to return (number or nil)
+		offset = offset >=0 and offset or 0 -- The offset from book 0 (number or nil)
+
+		local list = models.book:find_all_limit(nil,orderby,order,limit,offset)
+		return render_book_list(web,{list=list,user=user,pages=pages,order=order,orderby=orderby,limit=limit,offset=offset,fields=fields})
+	end	
 end --}}}
 
 --- Controller for the book processing (POST part)
@@ -689,8 +708,42 @@ function book_post(web,book_id) --{{{
 	return web:redirect(web:link("/book/"..book_id,{result=result,reservation= res and res.id or nil}))
 end --}}}
 
-bib:dispatch_get(view_book, "/book/(%d+)")
+bib:dispatch_get(view_book, "/book/(%d+)","/book/?")
 bib:dispatch_post(book_post, "/book/(%d+)")
+
+--- Controller for the author pages
+function author_get(web,id) -- {{{
+	local user = check_user(web)
+	local pages = models.page:find_all()
+	local order = web.input.order or "ASC"
+	local limit = tonumber(web.input.limit) or 10
+	local offset = tonumber(web.input.offset) or 0
+	if order:upper() ~= "ASC" and order:upper() ~="DESC" then -- Only allow asc or desc
+		order = "ASC"
+	end
+	limit = limit >= 0 and limit or 10 -- The maximum number of results to return (number or nil)
+	offset = offset >=0 and offset or 0 -- The offset from book 0 (number or nil)
+	if id:match("%d+") then
+		local author = models.author:find(id)
+
+		local fields = {title="title",author="author",isbn="isbn",tag="tag",abstract="abstract"}
+		local orderby = web.input.orderby and web.input.orderby:lower() or "title"-- The search criterium
+		-- Sanitation of the parameters
+		orderby = fields[orderby] or "title"
+
+		local list = models.book:find_all_limit("author_id="..author.id,orderby,order,limit,offset)
+		return render_author(web,{book_list=list,author=author,user=user,pages=pages,order=order,orderby=orderby,limit=limit,offset=offset,fields=fields})
+	else
+		local fields = {last_name="last_name",rest_name="rest_name"}
+		local orderby = web.input.orderby and web.input.orderby:lower() or "rest_name"-- The search criterium
+		-- Sanitation of the parameters
+		orderby = fields[orderby] or "rest_name"
+
+		local list = models.author:find_all_limit(nil,orderby,order,limit,offset)
+		return render_author_list(web,{list=list,user=user,pages=pages,order=order,orderby=orderby,limit=limit,offset=offset,fields=fields})
+	end
+end --}}}
+bib:dispatch_get(author_get,"/author/(%d+)/?","/author/?")
 
 --- Controller for the markdown syntax part
 function markdown_syntax(web,args) --{{{
@@ -729,7 +782,7 @@ bib:dispatch_static("/covers/.*%.jpg","/covers/.*%gif")
 -- Static html pages: Manuals, markdown syntax, ...
 
 -- Views for the application / Views para la aplicación
-function layout(web, args, inner_html) --{{{
+function layout(web, args, inner_html, rightsidebar) --{{{
 return html{
 	head{
 		title(bib_title),
@@ -740,13 +793,14 @@ return html{
 	body{
 		div{ id = "container",
 			div{ id = "header", title = "sitename" },
-			div{ id = "mainnav",
+			div{ id = "menu",
 				_menu(web, args)
 			}, 
-			div{ id = "menu",
+			div{ id = "sidebar",
 				_sidebar(web, args)
 			},  
 			div{ id = "contents", inner_html },
+			rightsidebar and div{ id="sidebar_right",style="clear:both", rightsidebar} or "",
 			div{ id = "footer", style="clear:both", markdown(strings.copyright_notice) }
 		}
 	}
@@ -754,10 +808,10 @@ return html{
 end
 
 function _menu(web, args)
-	local res={ li( a{ href= web:link("/"), strings.homepage_name }) }
-	for _,page in pairs(args.pages) do
-		res[#res + 1] = li(a{ href = web:link("/page/" .. page.id), page.title })
-	end
+	local res={
+		li( a{ href= web:link("/"), strings.homepage_name }),
+		li( a{ href= web:link("/admin"), strings.administration })
+		}
 	if args.user then
 		res[#res+1]=li( a{ href = web:link("/login"),strings.logged_in_as,args.user.login} )
 	else
@@ -769,10 +823,55 @@ end
 function _sidebar(web, args)
 	local res
 	res={
-	li( a{ href=web:link("/"), strings.homepage_name }),
-	li( a{ href=web:link("bytag"), strings.browse_by,strings.category })
+		li( strings.browse_by ),
+		ul{
+			li( a{ href=web:link("/bytag"), strings.category }),
+			li( a{ href=web:link("/book"), strings.book }), -- TODO implement
+			li( a{ href=web:link("/author"), strings.author })
+		},
+		li( strings.pages)
 	}
+	local pages = {}
+	for _,page in pairs(args.pages) do
+		pages[#pages + 1] = li(a{ href = web:link("/page/" .. page.id), page.title })
+	end
+	res[#res+1]=ul(pages)
 	return ul(res)
+end
+
+function _sort_sidebar(web,fields,order,orderby,limit)
+	local ft={ strings.sort_by,'<br />','<select name=orderby>' }
+	for field in pairs(fields) do
+		local selected
+		if orderby:lower() == field then
+			selected="selected"
+		end
+		ft[#ft+1]=option{value=field,selected=selected,strings[field]}
+	end
+	local asc_sel,desc_sel
+	if order:upper()=="DESC" then desc_sel="checked" else asc_sel="checked" end
+	ft[#ft+1]=table.concat{
+		'</select>',
+		'<br />',
+		input{type="radio",name="order",value="ASC",checked=asc_sel}, strings.order_asc, '<br />',
+		input{type="radio",name="order",value="DESC",checked=desc_sel}, strings.order_desc, '<br />',
+		'<select name="limit">',
+		'<br />'
+		}
+	for _,num in pairs{10,20,50,100} do
+		local selected
+		if num==limit then
+			selected="selected"
+		end
+		ft[#ft+1]=option{value=num, num, selected=selected}
+	end
+	ft[#ft+1]=table.concat{
+		'</select>',
+		strings.entries_per_page,
+		'<br />',	
+		input{type="submit", value=strings.confirm}
+		}
+	return form{ action=web.path_info, method="GET",ft }
 end
 --}}}
 
@@ -834,7 +933,7 @@ function _book_short(web, book)
 	end
 	local abstract_html = book.abstract_html:match("^(.*)<!%-%-%s*break%s*%-%->") or book.abstract_html
 	return div.book_short{ style="clear:both",
-		h3{book.title,strings.by_author,book.author_last_name,", ",book.author_rest_name},
+		h3{book.title,strings.by_author, a{ href=web:link("/author/"..book.author_id),book.author_last_name,", ",book.author_rest_name}},
 		div.cover{ a{ href = web:link("/book/".. book.id), img { style="float:left", height="100px",src=web:static_link(cover_img), alt=strings.cover_of .. book.title} }},
 		div.tags{em{book.cat,class="category"},": ", table.concat(book.tags,", ") },
 		strings.copies_available .. book.ncopies,
@@ -882,7 +981,7 @@ function render_book(web, args) --{{{
 	end
 	
 	local res={mesg,
-		h3{book.title ,strings.by_author,book.author_last_name , ", " , book.author_rest_name },
+		h3{book.title ,strings.by_author,a{ href=web:link("/author/"..book.author_id), book.author_last_name , ", " , book.author_rest_name} },
 		div.cover{ a{ href = web:link("/book/".. book.id), img {height="100px", src=web:static_link(cover_img), alt=strings.cover_of .. book.title} } },
 		div.tags{ em.category {book.cat}, ": ", table.concat(book.tags,", ") },
 		strings.copies_available .. book.ncopies,
@@ -910,7 +1009,8 @@ function render_book(web, args) --{{{
 				div.group{
 					h4(strings.this_book),
 					a{ href=web:link("/edit/book/"..book.id), strings.edit_book}," ",
-					a{ href=web:link("/delete/book/"..book.id), strings.delete_book}," ",
+					a{ href=web:link("/delete/book/"..book.id), strings.delete," ",strings.book}," ",
+					a{ href=web:link("/new/copy/",{book_id=book.id}),strings.new_copy}
 					}
 				}
 			local copies = models.copy:find_all_by_book_id({book.id})
@@ -929,6 +1029,59 @@ function render_book(web, args) --{{{
 	return layout(web,args,res)
 end --}}}
 
+--- Renders the booklist page
+function render_book_list(web, args) --{{{
+	-- This needs to list books, and accept options for sorting and limiting
+	local offset,limit,order,orderby=args.offset, args.limit, args.order, args.orderby
+	local title = h2(strings.browse_objects:gsub("@objects",strings.books))
+	local res = {}
+	local url = web.path_info:gsub("/+$","").."/" -- Strip extra // and make sure there is 1
+	for  item_n = 1,#args.list do
+		local item = args.list[item_n]
+		res[#res+1]= li{ a{href=web:link(url..item.id),item:concat_fields(item.form.title) }}
+	end
+	local prevPage = a{href=web:link(url,{offset = offset>limit and offset-limit or 0}), strings.prevPage}
+	local nextPage = a{href=web:link(url,{offset = offset+limit}), strings.nextPage}
+
+	return layout(web,args,{title,res,br(),prevPage," ",nextPage},_sort_sidebar(web,args.fields,order,orderby,limit))
+end --}}}
+
+--- Renders the author page
+function render_author(web,args) --{{{
+	local offset,limit,order,orderby=args.offset, args.limit, args.order, args.orderby
+	local author = args.author
+	local title=h2{author.last_name,", ",author.rest_name}
+	local url_ref = author.url_ref and a{ href=author.url_ref, author.url_ref} or ""
+	local books = {}
+	for k=1,#args.book_list do
+		local book=args.book_list[k]
+		book:pimp()
+		books[#books+1] = _book_short(web,book)--li{ a{href= web:link(("/book/%s"):format(book.id)),book.form.title}}
+		print(books[#books])
+	end
+
+	local url = web.path_info:gsub("/+$","").."/" -- Strip extra // and make sure there is 1
+	local prevPage = a{href=web:link(url,{offset = offset>limit and offset-limit or 0}), strings.prevPage}
+	local nextPage = a{href=web:link(url,{offset = offset+limit}), strings.nextPage}
+	return layout(web,args,{title,url_ref,books,prevPage,nextPage},_sort_sidebar(web,args.fields,order,orderby,limit))
+end --}}}
+
+--- Renders the authors list page
+function render_author_list(web,args) --{{{
+	-- This needs to list books, and accept options for sorting and limiting
+	local offset,limit,order,orderby=args.offset, args.limit, args.order, args.orderby
+	local title = h2(strings.browse_objects:gsub("@objects",strings.authors))
+	local res = {}
+	local url = web.path_info:gsub("/+$","").."/" -- Strip extra // and make sure there is 1
+	for  item_n = 1,#args.list do
+		local item = args.list[item_n]
+		res[#res+1]= li{ a{href=web:link(url..item.id),item:concat_fields(item.form.title) }}
+	end
+	local prevPage = a{href=web:link(url,{offset = offset>limit and offset-limit or 0}), strings.prevPage}
+	local nextPage = a{href=web:link(url,{offset = offset+limit}), strings.nextPage}
+
+	return layout(web,args,{title,res,br(),prevPage," ",nextPage},_sort_sidebar(web,args.fields,order,orderby,limit))
+end --}}}
 -- Add html utility functions to all render and layout functions, as to generate the HTML programmatically.
 -- Añadir funcciones html a todas las funcciones render y layout, para que pueden generar el HTML programmaticalemente.
 orbit.htmlify(bib, "layout", "_.+", "render_.+")
