@@ -813,9 +813,9 @@ function _menu(web, args)
 		li( a{ href= web:link("/admin"), strings.administration })
 		}
 	if args.user then
-		res[#res+1]=li( a{ href = web:link("/login"),strings.logged_in_as,args.user.login} )
+		res[#res+1]=li( a{ href = web:link("/login",{link_to=web.path_info}),strings.logged_in_as,args.user.login} )
 	else
-		res[#res+1]=li( a{ href = web:link("/login"),strings.login_button} )
+		res[#res+1]=li( a{ href = web:link("/login",{link_to=web.path_info}),strings.login_button} )
 	end
 	return ul(res)
 end
@@ -1057,7 +1057,6 @@ function render_author(web,args) --{{{
 		local book=args.book_list[k]
 		book:pimp()
 		books[#books+1] = _book_short(web,book)--li{ a{href= web:link(("/book/%s"):format(book.id)),book.form.title}}
-		print(books[#books])
 	end
 
 	local url = web.path_info:gsub("/+$","").."/" -- Strip extra // and make sure there is 1

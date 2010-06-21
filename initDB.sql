@@ -62,8 +62,8 @@ CREATE TABLE bib_center (
 
 CREATE TABLE bib_lending (
 	"id" INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-	"user_ID" INTEGER, -- Ref to User.UserID
-	"copy_ID" INTEGER, -- Ref to Copy.CopyID
+	"user_id" INTEGER, -- Ref to User.UserID
+	"copy_id" INTEGER, -- Ref to Copy.CopyID
 	"date_return" TEXT
 	);
 

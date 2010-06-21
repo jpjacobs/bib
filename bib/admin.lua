@@ -70,46 +70,76 @@ end --}}}
 --- Controller for the admin section (redirects if not logged in)
 -- @param web webobject which will be passed by the dispatcher
 -- @param params captchures matched by the dispatcher, which will either be words (other adminpages) or numbers (TODO necessary?)
-function admin(web,params) --{{{
+function admin_get(web,args) --{{{
 	-- List of admin pages, except the admin mainpage.
-	local adminPageList = {
-		page="page"}
---		adduser=render_adduser,
---		edituser=render_edituser,
---
---		addbook=render_addbook,
---		editbook=render_editbook,
---		addauthor=render_addauthor,
---		editauthor=render_editauthor,
 	local user=check_user(web)
-	local pages=models.page:find_all()
 	-- If the user is not set/known, then redirect to the login page
-	if not user then
-		return web:redirect(web:link("/login", { link_to = web:link("/admin") }))
+	if not user or user.is_admin ~= 1 then
+		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
 	else
-		-- If the user is an admin, redirect to the admin page
-		if user.is_admin == 1 then
-			if params==nil then
-				return admin_layout(web,{user=user,pages=pages}, render_admin(web, args, params))
-			-- Received a capture, indicating that 
-			else
-				local page_requested=adminPageList[params:match("(%w+)")]
-				local params_pass
-				if page_requested then
-					params_pass = params:match("%w+/(.+)")
-					return admin_layout(web,{user=user,pages=pages},_M["render_admin_".. page_requested ](web,params_pass))
-				else
-					return not_found
-				end
-			end
-		-- Logged is as a normal user, redirect to the loginpage, in order to log in as an admin instead
-		else
-			return web:redirect(web:link("/login", { link_to = web:link("/admin"), not_admin="1"}))
+		local order = web.input.order or "ASC"
+		local limit = tonumber(web.input.limit) or 10
+		local offset = tonumber(web.input.offset) or 0
+		if order:upper() ~= "ASC" and order:upper() ~="DESC" then -- Only allow asc or desc
+			order = "ASC"
 		end
+		limit = limit >= 0 and limit or 10 -- The maximum number of results to return (number or nil)
+		offset = offset >=0 and offset or 0 -- The offset from book 0 (number or nil)
+		local fields = {overdue="overdue",copy_code="copy_code",telephone="telephone",real_name="real_name",user_id="user_id",email="email",title="title"}
+		local orderby = web.input.orderby and web.input.orderby:lower() or "overdue"-- The search criterium
+		-- Sanitation of the parameters
+		orderby = fields[orderby] or "overdue"
+		-- Find users that have over-due books
+		-- using SQL because of WAY to complicated using Orbit
+		local query = ([[SELECT julianday("now")-julianday(date_return) AS overdue, bib_book.title, bib_book.id||"/"||copy_id as copy_code, user_id, bib_user.real_name, bib_user.telephone, bib_user.email
+		FROM bib_lending, bib_user, bib_book, bib_copy
+		WHERE bib_lending.copy_ID = bib_copy.id -- connect copy with lending
+		and bib_copy.book_id = bib_book.id -- connect copy with book
+		and bib_lending.user_ID = bib_user.id -- connect user with lending
+		and overdue > 0
+		ORDER BY %s %s LIMIT %s OFFSET %s;]]):format(orderby,order,limit,offset)
+		local curs,err = models.book.model.conn:execute(query)
+		if err then print("-- warn, overdues query in admin returned ",err) end
+		local overdues = {}
+		local t={}
+		while curs:fetch(t,"a") do
+			overdues[#overdues+1] = t
+			t={}
+		end
+		local allusers=models.user:find_all({fields={"id","real_name"}})
+		-- TODO pass fields for sorting sidebar
+		return render_admin(web,{user=user,allusers=allusers,overdues=overdues,fields=fields,order=order,limit=limit,offset=offset,orderby=orderby})
 	end
 end --}}}
+function admin_post(web,args)
+	local user = check_user(web)
+	if not user or user.is_admin ~= 1 then
+		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
+	else
+		if web.POST.op==strings.lend_copy then
+			local book_id,copy_nr = web.POST.lend_copy:match("%d+/%d+")
+			local copy = models.copy:find_first("book_id = ? and copy_nr = ?",{book_id,copy_nr,fields={"id"}})
+			local user = models.user:find(web.POST.user_id,{fields={"id"}})
+			if not book_id and copy_nr then
+				print("--warn copy_nr malformed") -- TODO message
+			elseif not copy then
+				print("--warn book_id and copy_nr don't form an existing copy code",book_id,copy_nr)
+			elseif not user then
+				print("--warn user ",web.POST.user_id," does not exist")
+			else
+				local t=models.lending:new()
+				t.user_id = user.id
+				t.copy_id = copy.id
+				t.date_return = os.date("%Y-%m-%d",os.time()+86400*7*3) -- TODO hardcodedvalue warning!
+				t.save()
+			end
+		elseif web.POST.op==strings.return_copy then
+		-- TODO TODO implement
+		end
+	end
+end
 
-bib:dispatch_get(admin, "/admin")--,"/admin/(%w+.+)")
+bib:dispatch_get(admin_get, "/admin")--,"/admin/(%w+.+)")
 
 --- Controller for the GET part of the login page
 function login_get(web) -- {{{
@@ -309,7 +339,6 @@ function edit_post(web,obj,id) --{{{
 	end
 	return tprint(web):gsub("\n","<br />")
 end --}}}
-
 bib:dispatch_get(edit_get,"/edit/(%w+)/(%d+)","/edit/(%w+)/?","/edit/?")
 bib:dispatch_post(edit_post,"/edit/(%w+)/(%d+)")
  
@@ -352,7 +381,6 @@ function delete_post(web,obj,id) --{{{
 		end
 	end
 end --}}}
-
 bib:dispatch_get(delete_get,"/delete/(%w+)/(%d+)")
 bib:dispatch_post(delete_post,"/delete/(%w+)/(%d+)")
 
@@ -401,7 +429,6 @@ function new_get(web,obj) --{{{
 		end
 	end
 end --}}}
-
 bib:dispatch_get(new_get,"/new/(%w+)/?","/new/?")
 
 --- Controller for the dependancy control for making a new object (like a book for a copy)
@@ -435,13 +462,7 @@ function depends_get(web,obj,new_id) --{{{
 		return not_found(web)
 	end
 end --}}}
-
 bib:dispatch_get(depends_get,"/depends/(%w+)/(%d+)/?")
-
-function render_admin_page(web,args,params) --{{{
-	print("render_admin_page, stub")
-	return h2(params)
-end --}}}
 
 function render_edit(web,args,obj_type,obj,fields) --{{{ fields now is a table of fields.
 	local m = models.obj_type
@@ -562,7 +583,7 @@ function login_layout(web, params) --{{{
 end --}}}
 
 --- View-template for the adminpages, inner_html being render_admin or whatever.
-function admin_layout(web, args, inner_html) --{{{
+function admin_layout(web, args, inner_html, rightsidebar) --{{{
 	-- Args needed are:
 	-- 	pages = all pages in the DB
 	-- 	user = logged in user
@@ -579,6 +600,7 @@ function admin_layout(web, args, inner_html) --{{{
 				div{ id = "menu", _menu(web,args) }, -- Uses the same _menu as in layout
 				div{ id = "sidebar", _admin_sidebar(web, args) },  
 				div{ id = "contents", inner_html },
+				rightsidebar and div{ id="sidebar_right",style="clear:both", rightsidebar} or "",
 				div{ id = "footer", markdown(strings.copyright_notice) }
 			}
 		}
@@ -604,62 +626,46 @@ function _admin_sidebar(web,args)
 	return table.concat(res, "\n")
 end --}}}
 
-function render_admin(web,args, params) --{{{ TODO zet om
-   local section_list
-   local sections = models.section:find_all({ order = "id asc" })
-   if params.section then
-      local section = params.section
-      local res_section = {}
-      res_section[#res_section + 1] = "<div class=\"blogentry\">\n"
-      res_section[#res_section + 1] = h2(strings.section .. ": " ..
-					 a{ href = web:link("/editsection/" .. section.id),
-					    section.title })
-      local posts = models.post:find_all_by_section_id{ section.id,
-	 order = "published_at desc" }
-      res_section[#res_section + 1] = "<p>"
-      for _, post in ipairs(posts) do
-	 local in_home, published = "", ""
-	 if post.in_home then in_home = " [HOME]" end
-	 if post.published then published = " [P]" end
-	 res_section[#res_section + 1] = a{ href =
-	    web:link("/editpost/" .. post.id), post.title } .. in_home .. 
-	    published .. br()
-      end
-      res_section[#res_section + 1] = "</p>"
-      res_section[#res_section + 1] = 
-	 p{ a.button{ href = web:link("/editpost?section_id=" .. section.id), 
-	    button{ strings.new_post } } }
-      res_section[#res_section + 1] = "</div>\n"
-      section_list = table.concat(res_section, "\n")      
-   elseif next(sections) then
-      local res_section = {}
-      for _, section in ipairs(sections) do
-	 res_section[#res_section + 1] = "<div class=\"blogentry\">\n"
-	 res_section[#res_section + 1] = h2(strings.section .. ": " ..
-					    a{ href = web:link("/editsection/" .. section.id),
-					       section.title })
-	 local posts = models.post:find_all_by_section_id{ section.id,
-	    order = "published_at desc" }
-	 res_section[#res_section + 1] = "<p>"
-	 for _, post in ipairs(posts) do
-	    local in_home, published = "", ""
-	    if post.in_home then in_home = " [HOME]" end
-	    if post.published then published = " [P]" end
-	    res_section[#res_section + 1] = a{ href =
-	       web:link("/editpost/" .. post.id), post.title } .. in_home .. 
-	       published .. br()
-	 end
-	 res_section[#res_section + 1] = "</p>"
-	 res_section[#res_section + 1] = 
-	    p{ a.button { href = web:link("/editpost?section_id=" .. section.id),
-	       button{ strings.new_post } } }
-	 res_section[#res_section + 1] = "</div>\n"
-      end
-      section_list = table.concat(res_section, "\n")
-   else
-      section_list = strings.no_sections
-   end
-   return div(section_list)
+function render_admin(web,args, params) --{{{
+	local offset,limit,order,orderby=args.offset, args.limit, args.order, args.orderby
+	local part1 = {
+		h2(strings.admin_home),
+		h3(strings.lendings)
+		}
+	local ft = { input{type="text",name="lend_copy",value=web.GET.lend_copy},'<select name="user_id">'}
+	for k=1,#args.allusers do
+		local user=args.allusers[k]
+		ft[#ft+1]=option{name=user.id,user.id,":",user.real_name}
+	end
+	ft[#ft+1]='</select>'
+	ft[#ft+1]=input{type="submit",name="op",value=strings.lend_copy}
+	ft[#ft+1]=br()
+	ft[#ft+1]=input{type="text",name="return_copy",value=web.GET.return_copy}
+	ft[#ft+1]=input{type="submit",name="op",value=strings.return_copy}
+	local part2 =  h3(strings.overdues)
+	local tab_body={
+		tr{
+			th(strings.days),
+			th(strings.name),
+			th(strings.book),
+			th(strings.copy_code),
+			th(strings.telephone),
+			--th{strings.email}
+		}
+	}
+	for k = 1,#args.overdues do
+		local item=args.overdues[k]
+		local class
+		if k%2==1 then class="alt" end --TODO CSS color according urgency.
+		tab_body[#tab_body+1]= tr{td(tostring(math.floor(item.overdue))), td(item.real_name), td(item.title), td(item.copy_code), td(tostring(item.telephone))}
+	end
+	local url = web.path_info:gsub("/+$","") -- Strip extra // and make sure there is 1
+	local prevPage = a{href=web:link(url,{offset = offset>limit and offset-limit or 0}), strings.prevPage}
+	local nextPage = a{href=web:link(url,{offset = offset+limit}), strings.nextPage}
+	return admin_layout(web,args,{part1,form{action=web.path_info, method="POST",ft,},
+		part2,'<table id="overdues">',tab_body,'</table>',prevPage,nextPage},
+		_sort_sidebar(web,args.fields,order,orderby,limit,offset))
+	
 end --}}}
 
 function render_login(web,args,params) --{{{
