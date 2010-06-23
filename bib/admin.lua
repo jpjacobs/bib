@@ -111,35 +111,94 @@ function admin_get(web,args) --{{{
 		return render_admin(web,{user=user,allusers=allusers,overdues=overdues,fields=fields,order=order,limit=limit,offset=offset,orderby=orderby})
 	end
 end --}}}
-function admin_post(web,args)
-	local user = check_user(web)
+function admin_post(web,args) --{{{
+	local user= check_user(web)
 	if not user or user.is_admin ~= 1 then
 		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
 	else
-		if web.POST.op==strings.lend_copy then
-			local book_id,copy_nr = web.POST.lend_copy:match("%d+/%d+")
-			local copy = models.copy:find_first("book_id = ? and copy_nr = ?",{book_id,copy_nr,fields={"id"}})
-			local user = models.user:find(web.POST.user_id,{fields={"id"}})
-			if not book_id and copy_nr then
-				print("--warn copy_nr malformed") -- TODO message
-			elseif not copy then
-				print("--warn book_id and copy_nr don't form an existing copy code",book_id,copy_nr)
-			elseif not user then
-				print("--warn user ",web.POST.user_id," does not exist")
-			else
-				local t=models.lending:new()
-				t.user_id = user.id
-				t.copy_id = copy.id
-				t.date_return = os.date("%Y-%m-%d",os.time()+86400*7*3) -- TODO hardcodedvalue warning!
-				t.save()
+		if web.POST.op==strings.lend_copy then --{{{
+			if web.POST.lend_copy == "" then
+				return web:redirect("/admin")
 			end
-		elseif web.POST.op==strings.return_copy then
-		-- TODO TODO implement
-		end
+			local book_id,copy_nr = web.POST.lend_copy:match("%d+/%d+")
+			local copy,copy_id
+			print('--debug amdin_post, user_id for lending is',web.POST.user_id,"and lend_copy =",web.POST.lend_copy)
+			if not book_id then -- did not find in frmat book_id/copy_nr, try the raw copy_id (as in db)
+				copy_id = web.POST.lend_copy:match("%d+")
+				copy = models.copy:find(web.POST.lend_copy)
+			else
+				copy = models.copy:find_first("book_id = ? and copy_nr = ?",{book_id,copy_nr,fields={"id"}})
+			end
+			local user_lend = models.user:find(web.POST.user_id)
+			if not (book_id and copy_nr) and not copy_id then
+				print("--warn admin_post copy_nr malformed") -- TODO message
+			elseif not copy then
+				print("--warn admin_post book_id and copy_nr don't form an existing copy code",book_id,copy_nr)
+			elseif not user_lend then
+				print("--warn admin_post user ",web.POST.user_id," does not exist")
+			elseif models.lending:find_first("copy_id = ?",{copy.id,fields={"id"}}) then
+				print("--warn admin_post, copy not available")
+			else
+				-- TODO if a reservation is pending _for another user_ then message the admin.
+				-- How do we handle this with multiple copies? per reservation, one copy should be kept back
+				-- Number of reservations, excepting reservations for this book for this user
+				local num_res = models.reservation:find_first("user_id <> ? and book_id == ?",{user_lend.id,copy.book_id,fields={[[count(id)]]}})
+				-- Total number of copies of this book
+				local all_copies = models.copy:find_first("id == ?",{copy.id,fields={"id"}})
+				-- Number of copies of this book being lend
+				local copies_ids = {}
+				for k=1,#all_copies do	
+					copies_ids[#copies_ids+1] = all_copies[k].id
+				end
+				local book=models.book:find(copy.book_id)
+				book:pimp()
+				-- There aren't any copies available, and the lending user does not have a reservation for this book
+				if book.copies_available <= 0 and not models.reservation:find_by_user_id_and_book_id({user_lend.id,copy.book_id}) then
+					print("--debug admin_post, no un-reserved copies available, lending NOT made")
+					return web:redirect(web:link("/admin")) -- TODO message & link_to 
+				else
+					local t=models.lending:new()
+					t.user_id = user_lend.id
+					t.copy_id = copy.id
+					t.date_return = os.date("%Y-%m-%d",os.time()+86400*7*3) -- TODO hardcodedvalue warning!
+					t:save()
+					local r = models.reservation:find_by_user_id_and_book_id({user_lend.id,copy.book_id})
+					if r then
+						print("-- debug admin_post, reservation",r.id,"deleted") 
+						r:delete()
+					end
+				end
+			end
+			return web:redirect(web:link("/admin")) -- }}} TODO message & link_to
+		elseif web.POST.op==strings.return_copy then --{{{
+			local book_id,copy_nr = web.POST.return_copy:match("%d+/%d+")
+			local copy , copy_id
+			if not book_id then -- did not find in frmat book_id/copy_nr, try the raw copy_id (as in db)
+				copy_id = web.POST.return_copy:match("%d+")
+				copy = models.copy:find(copy_id)
+			else
+				copy = models.copy:find_first("book_id = ? and copy_nr = ?",{book_id,copy_nr,fields={"id"}})
+			end
+			local lending = models.lending:find_first("copy_id = ?",{copy.id})
+			if not book_id and copy_nr then
+				print("--warn admin_post copy_nr malformed") -- TODO message
+			elseif not copy then
+				print("--warn admin_post book_id and copy_nr don't form an existing copy code",book_id,copy_nr)
+			elseif not lending then
+				print("--warn copy",copy.id," has not been lend")
+			else
+				print("--debug admin_post: lending ",lending.id,"deleted")
+				lending:delete()
+			end
+			return web:redirect(web:link("/admin")) -- TODO message & link_to
+		else
+			return not_found(web)
+		end --}}}
 	end
-end
+end --}}}
 
-bib:dispatch_get(admin_get, "/admin")--,"/admin/(%w+.+)")
+bib:dispatch_get(admin_get, "/admin/?")--,"/admin/(%w+.+)")
+bib:dispatch_post(admin_post,"/admin/?")
 
 --- Controller for the GET part of the login page
 function login_get(web) -- {{{
@@ -276,11 +335,12 @@ function edit_post(web,obj,id) --{{{
 		local this_form=models[obj].form
 		-- parse web.POST parameters
 		if web.POST.op==strings.delete then
-			if web.POST.create == "1" then
+			if web.POST.create == "1" then -- this is a newly created "unsaved" object
 				this_object:delete()
 				return web:redirect(web:link("/edit/"..obj))
 			else
-				return web:redirect(web:link("/delete/"..obj.."/"..id)) -- page asking for confirmation + processing in POST --TODO delete page
+				print("--debug edit_post, link_to = ",web.path_info)
+				return web:redirect(web:link("/delete/"..obj.."/"..id),{link_to=web.path_info}) -- page asking for confirmation + processing in POST
 			end
 		elseif web.POST.op==strings.save then --{{{
 			if not this_form then
@@ -323,18 +383,16 @@ function edit_post(web,obj,id) --{{{
 						end
 					end
 				end
-		--		if obj_changed then -- The object changed, so save it. FIXME deprecated
-		--			print("--debug edit_post, there have been changes to the object ",this_object.name,this_object.id,", saving changes")
-					this_object:save()
---					print("--debug edit_post, Object saved")
-		--		end
+	--			print("--debug edit_post, there have been changes to the object ",this_object.name,this_object.id,", saving changes")
+				this_object:save()
+--				print("--debug edit_post, Object saved")
 			end
 			return web:redirect(web:link("/edit/"..obj.."/"..id),{mesg=mesg}) --}}}
 		elseif web.POST.op==strings.cancel then
 			if web.POST.create == "1" then
 				this_object:delete()
 			end
-			return web:redirect(web:link("/edit/"..obj))
+			return web:redirect(web:link("/edit/"..obj)) -- TODO use link_to
 		end
 	end
 	return tprint(web):gsub("\n","<br />")
@@ -374,7 +432,9 @@ function delete_post(web,obj,id) --{{{
 			local object = models[obj]:find(id)
 			if not object then
 				return not_found(web)
-			else
+			elseif web.POST.op== strings.cancel then
+				return web:redirect(web:link("/edit/"..obj)) -- TODO link_to
+			elseif web.POST.op == strings.delete then
 				object:delete() -- BIG TODO : What to do with orphanaged things, like books without authors, ... -> maybe warn in delete_get about dependancies.
 				return web:redirect(web:link("/edit/"..obj)) --TODO pass suitable message
 			end
@@ -635,13 +695,14 @@ function render_admin(web,args, params) --{{{
 	local ft = { input{type="text",name="lend_copy",value=web.GET.lend_copy},'<select name="user_id">'}
 	for k=1,#args.allusers do
 		local user=args.allusers[k]
-		ft[#ft+1]=option{name=user.id,user.id,":",user.real_name}
+		ft[#ft+1]=option{value=user.id,user.id,":",user.real_name}
 	end
 	ft[#ft+1]='</select>'
 	ft[#ft+1]=input{type="submit",name="op",value=strings.lend_copy}
-	ft[#ft+1]=br()
-	ft[#ft+1]=input{type="text",name="return_copy",value=web.GET.return_copy}
-	ft[#ft+1]=input{type="submit",name="op",value=strings.return_copy}
+	ft2={
+		input{type="text",name="return_copy",value=web.GET.return_copy},
+		input{type="submit",name="op",value=strings.return_copy}
+		}
 	local part2 =  h3(strings.overdues)
 	local tab_body={
 		tr{
@@ -662,7 +723,7 @@ function render_admin(web,args, params) --{{{
 	local url = web.path_info:gsub("/+$","") -- Strip extra // and make sure there is 1
 	local prevPage = a{href=web:link(url,{offset = offset>limit and offset-limit or 0}), strings.prevPage}
 	local nextPage = a{href=web:link(url,{offset = offset+limit}), strings.nextPage}
-	return admin_layout(web,args,{part1,form{action=web.path_info, method="POST",ft,},
+	return admin_layout(web,args,{part1,form{name="lend",action=web.path_info, method="POST",ft},form{name="return",action=web.path_info, method="POST",ft2},
 		part2,'<table id="overdues">',tab_body,'</table>',prevPage,nextPage},
 		_sort_sidebar(web,args.fields,order,orderby,limit,offset))
 	
@@ -700,9 +761,11 @@ function render_delete(web,args,object) --{{{
 		div.group{(strings.confirm_delete:gsub("@(%w)",{a=object:concat_fields(object.form.title," ,"),b=object.name,c=object.id}))},
 		form{ action = web.path_info, method = "POST",
 			input{ type="submit", id="cancel", name="op", value=strings.cancel},
-			input{ type="submit", id="delete", name="op", value=strings.delete}
+			input{ type="submit", id="delete", name="op", value=strings.delete},
+			input{ type="hidden", name="link_to", value = web.input.link_to }
 		}
 	}
+	print("--debug render_delete, link_to= ", web.input.link_to)
 	return admin_layout(web,args,res)
 end --}}}
 

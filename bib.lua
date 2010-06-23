@@ -71,9 +71,33 @@ require "markdown"			-- we'll use markdown for marking up contents
 require "cosmo"				-- for templatematching
 
 module("bib", package.seeall, orbit.new)
-
 -- Load the config file bib/config.lua / Carga el archivo de configuración bib/config.lua
 require "bib.config"
+
+--- Function validating the translations in bib/trans.lua against the reference language, ie "en"
+function validate(strings,def) -- {{{ TODO move back into config.lua, and solve "attempt to call global print, nil " errors
+	local def = def or "en"
+	print("Validating translation file bib/trans.lua")
+	for lang,tab in pairs(trans.strings) do
+		for k,v in pairs(trans.strings[language_def]) do
+			if not tab[k] then
+				print("--err: key",k,"does not exist in strings[",lang,"]")
+			elseif type(v) == "table" then
+				for kk,vv in pairs(v) do
+					if not tab[k][kk] then
+						print("--err: key", kk,"does not exist in strings[",lang,"][",k,"]")
+					elseif string.match(tab[k][kk],"^%s*$") then
+						print("--warn: value missing for key", kk,"in strings[",lang,"][",k,"]")
+					end
+				end
+			elseif string.match(tab[k],"^%s*$") then
+				print("--warn: value missing for key",k,"in translation",lang)
+			end
+		end
+	end
+end --}}}
+--validate(trans.strings,language_def)
+
 require "bib.admin"
 
 -- Load and connect the database / Carga la base de datos y conectase
@@ -440,6 +464,16 @@ function models.book.pimp(book) --{{{
 		end
 		book.tags=tags
 		book.ncopies=#(models.copy:find_all_by_book_id({book.id})) -- TODO Add support for lend books.
+		local num_res = models.reservation:find_first("book_id == ?",{book.id,fields={[[count(id)]]}})["count(id)"]
+		-- Total number of copies of this book
+		local all_copies = models.copy:find_all("book_id == ?",{book.id,fields={"id"}})
+		-- Number of copies of this book being lend
+		local copies_ids = {}
+		for k=1,#all_copies do	
+			copies_ids[#copies_ids+1] = all_copies[k].id
+		end
+		local num_lend = models.lending:find_first("copy_id == ?",{copies_ids,fields={"count(id)"}})["count(id)"]
+		book.copies_available =  #all_copies-num_lend-num_res -- copies reserved > copies available 
 		book.cat = models.cat:find(book.cat_id).cat_text
 		book:update_html() -- updates html version of page if necessary.
 end --}}}
@@ -651,8 +685,16 @@ function view_book(web, id) --{{{
 		if user then
 			local user_res=models.reservation:find_by_book_id_and_user_id({book_id,user.id})
 		end
-
-		return render_book(web,{book=book,user=user,pages=pages,reservation=user_res})
+		local copies = models.copy:find_all_by_book_id({book.id})
+		for k=1,#copies do
+			local lend = models.lending:find_first("copy_id = ?",{copies[k].id})
+			if lend then
+				copies[k].available=false
+			else
+				copies[k].available=true
+			end
+		end
+		return render_book(web,{book=book,user=user,pages=pages,reservation=user_res,copies=copies})
 	else
 		local fields = {title="title",author="author",isbn="isbn",tag="tag",abstract="abstract"}
 		local orderby = web.input.orderby and web.input.orderby:lower() or "title"-- The search criterium
@@ -936,7 +978,7 @@ function _book_short(web, book)
 		h3{book.title,strings.by_author, a{ href=web:link("/author/"..book.author_id),book.author_last_name,", ",book.author_rest_name}},
 		div.cover{ a{ href = web:link("/book/".. book.id), img { style="float:left", height="100px",src=web:static_link(cover_img), alt=strings.cover_of .. book.title} }},
 		div.tags{em{book.cat,class="category"},": ", table.concat(book.tags,", ") },
-		strings.copies_available .. book.ncopies,
+		strings.copies_available:gsub("@(%w+)",{available=math.max(0,book.copies_available),total=book.ncopies}),
 		abstract_html,
 		--a{ href = web:link("/post/" .. post.id .. "#comments"), strings.comments ..
 		--" (" .. (post.n_comments or "0") .. ")" }
@@ -984,7 +1026,7 @@ function render_book(web, args) --{{{
 		h3{book.title ,strings.by_author,a{ href=web:link("/author/"..book.author_id), book.author_last_name , ", " , book.author_rest_name} },
 		div.cover{ a{ href = web:link("/book/".. book.id), img {height="100px", src=web:static_link(cover_img), alt=strings.cover_of .. book.title} } },
 		div.tags{ em.category {book.cat}, ": ", table.concat(book.tags,", ") },
-		strings.copies_available .. book.ncopies,
+		strings.copies_available:gsub("@(%w+)",{available=math.max(0,book.copies_available),total=book.ncopies}),
 		book.abstract_html
 		}
 	if args.user then
@@ -998,7 +1040,7 @@ function render_book(web, args) --{{{
 			}
 		else
 			res[#res+1]= form {action=web:link("/book/"..book.id), method="POST",
-				strings.copies_available, book.ncopies,
+				strings.copies_available:gsub("@(%w+)",{available=book.copies_available,total=book.ncopies}),
 				input{ name="submit",type="submit", value=strings.reserve },
 			}
 		end
@@ -1009,16 +1051,17 @@ function render_book(web, args) --{{{
 				div.group{
 					h4(strings.this_book),
 					a{ href=web:link("/edit/book/"..book.id), strings.edit_book}," ",
-					a{ href=web:link("/delete/book/"..book.id), strings.delete," ",strings.book}," ",
+					a{ href=web:link("/delete/book/"..book.id,{link_to=web.path_info}), strings.delete," ",strings.book}," ",
 					a{ href=web:link("/new/copy/",{book_id=book.id}),strings.new_copy}
 					}
 				}
-			local copies = models.copy:find_all_by_book_id({book.id})
 			local copies_list = {}
-			for _,copy in pairs(copies) do
+			for _,copy in pairs(args.copies) do
 				copies_list[#copies_list+1] = li{ book.title.." ", copy.id ," ",
-					a{ href=web:link("/lend/"..copy.id),	strings.lend_copy}," ",
-					a{ href=web:link("/return/"..copy.id),	strings.return_copy}," ",
+					-- If the copy is available, enable the lend-link
+					(copy.available and a{ href=web:link("/admin",{lend_copy=copy.id}),	strings.lend_copy}) or "" ," ",
+					-- If the copy is not available, enable the return-link
+					(not copy.available and a{ href=web:link("/admin",{return_copy=copy.id}),	strings.return_copy}) or ""," ",
 					a{ href=web:link("/edit/copy/"..copy.id),	strings.edit_copy}," ",
 					a{ href=web:link("/delete/copy/"..copy.id),	strings.delete_copy}
 					}

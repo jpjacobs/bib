@@ -16,7 +16,7 @@
 
 -- Contains every string that needs localization.
 -- if a string is variable, @... will be replaced by with the appropriate value by the application.
-module("bib.trans")
+module("bib.trans",package.seeall)
 strings = {}
 
 -- Strings in English
@@ -60,7 +60,7 @@ strings.en = {
 	copy = "Copy",
 	copy_nr = "Copy number",
 	copy_code = "Copy code",
-	copies_available = "Copies available: ",
+	copies_available = "@available of @total copies available",
 	copies = "Copies",
 	cover_of = "Cover image of ",
 	copyright_notice = "Licensed under the [MIT license](http://en.wikipedia.org/wiki/MIT_License) ",
@@ -211,7 +211,7 @@ strings.es={
 	copy = "Ejemplar",
 	copy_nr = "Numero ejemplar",
 	copy_code = "Codigo del ejemplar",
-	copies_available = "Ejemplares disponibles: ",
+	copies_available = "@available de @total ejemplares disponibles",
 	cover_of = "Imagen de la tapa de ",
 	copies = "Ejemplares",
 	copyright_notice = "Lleva la [licensia MIT](http://es.wikipedia.org/wiki/MIT_License)",
@@ -347,7 +347,7 @@ strings.nl={
 	copy_nr = "Exemplaar nummer",
 	copy_code = "Exemplaar code",
 	copies = "Exemplaren",
-	copies_available = "Exemplaren beschikbaar: ",
+	copies_available = "@available van de @total exemplaren beschikbaar",
 	copyright_notice = "Beschikbaar onder de [MIT license][http://nl.wikipedia.org/wiki/MIT-licentie]",
 	cover_of = "Afbeelding van de kaft van ",
 	create_new = "Creëer nieuw",
