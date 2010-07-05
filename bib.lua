@@ -690,6 +690,9 @@ function view_book(web, id) --{{{
 			local lend = models.lending:find_first("copy_id = ?",{copies[k].id})
 			if lend then
 				copies[k].available=false
+				copies[k].user_name = models.user:find(lend.user_id).real_name
+				copies[k].user_id = lend.user_id
+				copies[k].date_return = lend.date_return
 			else
 				copies[k].available=true
 			end
@@ -1057,11 +1060,20 @@ function render_book(web, args) --{{{
 				}
 			local copies_list = {}
 			for _,copy in pairs(args.copies) do
-				copies_list[#copies_list+1] = li{ book.title.." ", copy.id ," ",
+				local hilight
+				if tonumber(web.GET.copy)==copy.id then
+					hilight="hilight"
+				end
+				copies_list[#copies_list+1] = li{ class=hilight, book.title.." ", copy.id ," ",
 					-- If the copy is available, enable the lend-link
-					(copy.available and a{ href=web:link("/admin",{lend_copy=copy.id}),	strings.lend_copy}) or "" ," ",
+					(copy.available and
+						a{ href=web:link("/admin",{lend_copy=copy.id}),	strings.lend_copy})
+					or "" ," ",
 					-- If the copy is not available, enable the return-link
-					(not copy.available and a{ href=web:link("/admin",{return_copy=copy.id}),	strings.return_copy}) or ""," ",
+					(not copy.available and
+						{strings.lend_to_until:gsub("@(%w+)",{user=a{href="/edit/user/"..copy.user_id,copy.user_name},date=copy.date_return})," ",
+						a{ href=web:link("/admin",{return_copy=copy.id}),	strings.return_copy}})
+					or ""," ", --TODO pimp copy received with user_id and date_return if lend.
 					a{ href=web:link("/edit/copy/"..copy.id),	strings.edit_copy}," ",
 					a{ href=web:link("/delete/copy/"..copy.id),	strings.delete_copy}
 					}

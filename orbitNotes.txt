@@ -39,6 +39,6 @@ All my notes I found out when using Orbit
 7. would be usefull to have a function which will contain the next id to be assigned for a model (in order to avoid creating instances in GET calls).
 	In the mean time, use (conn:execute[[SELECT seq FROM sqlite_sequence WHERE name = ]]..model.table_prefix..model.name):fetch()+1
 
-8. Don't try passing strings into the htmlify functions, it won't work. (resulting in this error: bad argument #1 to 'pairs' (table expected, got number))
+8. Don't try passing non-strings into the htmlify functions, it won't work. (resulting in this error: bad argument #1 to 'pairs' (table expected, got number))
 	tostring() them first.
 
