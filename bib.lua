@@ -111,7 +111,7 @@ mapper.driver = database.driver
 -- SQL query sanitation and un-sanitation functions
 --	local sanitize_tab={"select","drop","insert","delete","update","create","pragma","alter"}
 --- Utility function to check whether a user is a user
-function check_user(web)
+function check_user(web) --{{{
 	local auth = web.cookies.authentication		-- Get the authentication cookie
 	if auth then
 		local login,auth_hash =auth:match("(%w*)||(%d*)")	-- parse the username and auth-hash (random number that get's saved to the DB for each user)
@@ -124,7 +124,7 @@ function check_user(web)
 	else
 		return nil
 	end
-end
+end --}}}
 
 function check_isbn(number) -- TODO move to some utility module ... --{{{
 	if not_empty(number) then
@@ -272,7 +272,7 @@ models.copy.form={--{{{
 	title={"book_id","copy_nr",sep="/"},
 	depends="book",
 	fields = {
-		{name="book_id",caption=strings.book,["type"]="select",model=models.book,fields={"title","id"}},
+		{name="book_id",caption=strings.book,["type"]="select_disabled",model=models.book,fields={"id","title",sep=": "}},
 		{name="copy_nr",caption=strings.copy_nr,["type"]="readonly",
 			autogen = function(copy_model,copy,get)
 				if copy or not get then print("-- debug copy, something fishy going on!") end
@@ -1055,7 +1055,8 @@ function render_book(web, args) --{{{
 					h4(strings.this_book),
 					a{ href=web:link("/edit/book/"..book.id), strings.edit_book}," ",
 					a{ href=web:link("/delete/book/"..book.id,{link_to=web.path_info}), strings.delete," ",strings.book}," ",
-					a{ href=web:link("/new/copy/",{book_id=book.id}),strings.new_copy}
+					a{ href=web:link("/new/copy/",{book_id=book.id}),strings.new_copy}," ",
+					a{ href=web:link("/admin",{reserve_book=book.id}), strings.reserve}
 					}
 				}
 			local copies_list = {}
@@ -1075,7 +1076,7 @@ function render_book(web, args) --{{{
 						a{ href=web:link("/admin",{return_copy=copy.id}),	strings.return_copy}})
 					or ""," ", --TODO pimp copy received with user_id and date_return if lend.
 					a{ href=web:link("/edit/copy/"..copy.id),	strings.edit_copy}," ",
-					a{ href=web:link("/delete/copy/"..copy.id),	strings.delete_copy}
+					a{ href=web:link("/delete/copy/"..copy.id),	strings.delete_copy}," ",
 					}
 			end
 			res[#res+1]=div.group{ h4(strings.copies), ul(copies_list)}

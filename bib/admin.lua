@@ -122,7 +122,6 @@ function admin_post(web,args) --{{{
 			end
 			local book_id,copy_nr = web.POST.lend_copy:match("%d+/%d+")
 			local copy,copy_id
-			print('--debug amdin_post, user_id for lending is',web.POST.user_id,"and lend_copy =",web.POST.lend_copy)
 			if not book_id then -- did not find in frmat book_id/copy_nr, try the raw copy_id (as in db)
 				copy_id = web.POST.lend_copy:match("%d+")
 				copy = models.copy:find(web.POST.lend_copy)
@@ -154,7 +153,7 @@ function admin_post(web,args) --{{{
 				book:pimp()
 				-- There aren't any copies available, and the lending user does not have a reservation for this book
 				if book.copies_available <= 0 and not models.reservation:find_by_user_id_and_book_id({user_lend.id,copy.book_id}) then
-					print("--debug admin_post, no un-reserved copies available, lending NOT made")
+					print("--warn admin_post, no un-reserved copies available, lending NOT made")
 					return web:redirect(web:link("/admin")) -- TODO message & link_to 
 				else
 					local t=models.lending:new()
@@ -164,7 +163,7 @@ function admin_post(web,args) --{{{
 					t:save()
 					local r = models.reservation:find_by_user_id_and_book_id({user_lend.id,copy.book_id})
 					if r then
-						print("-- debug admin_post, reservation",r.id,"deleted") 
+						--print("--debug admin_post, reservation",r.id,"deleted") 
 						r:delete()
 					end
 				end
@@ -190,10 +189,56 @@ function admin_post(web,args) --{{{
 				print("--debug admin_post: lending ",lending.id,"deleted")
 				lending:delete()
 			end
-			return web:redirect(web:link("/admin")) -- TODO message & link_to
+			return web:redirect(web:link("/admin")) -- TODO message & link_to --}}}
+		elseif web.POST.op==strings.reserve then --{{{
+			local book_id = web.POST.reserve_book:match("%d+")
+			local user_id = web.POST.user_id:match("%d+")
+			-- Check user, Check id, check book exists, check previous reservation, check lendings if already lend
+			if not user_id then
+				print("--warn user_id should be numerics only")
+			elseif not models.user:find(tonumber(user_id)) then
+				print("--warn user",user_id,"does not exist in the DB")
+			elseif not book_id then
+				print("--warn reserve_book malformed, should contain a decimals only book_id")
+			elseif not models.book:find(book_id) then
+				print("--warn book with id",book_id,"does not exists in the DB")
+			elseif models.reservation:find_first("user_id = ? and book_id = ?",{user_id,book_id}) then
+				print("--warn a reservation for book",book_id,"already exists for user",web.POST.user_id)
+			else
+				local copies = models.copy:find_all("book_id = ?",book_id)
+				local copy_ids = {}
+				for k=1,#copies do
+					copy_ids[k]=copies[k].id
+				end
+				if models.lending:find_first("user_id = ? and copy_id = ?",{user_id,copy_ids}) then
+					print("--warn user",web.POST.user_id," still has a copy of book",book_id)
+				else
+					local t=models.reservation:new()
+					t.user_id = user_id
+					t.book_id = book_id
+					t.date = os.date("%Y-%m-%d")
+					t:save()	
+					print("reserved",web.POST.reserve_book)
+				end
+			end
+			return web:redirect(web:link("/admin")) -- TODO message & link_to --}}}
+		elseif web.POST.op==strings.cancel_reservation then --{{{
+			local reservation_id = web.POST.cancel_reservation:match("%d+")
+			-- Check user, Check id, check book exists, check previous reservation, check lendings if already lend
+			if not reservation_id then
+				print("--warn reservation_id should be numerics only")
+			end
+			local reservation = models.reservation:find(tonumber(reservation_id)) 
+			if not reservation then
+				print("--warn reservation",reservation_id,"does not exist in the DB")
+			end
+			reservation:delete()	
+			print("canceled reservation",web.POST.cancel_reservation)
+			return web:redirect(web:link("/admin")) -- TODO message & link_to --}}}
 		else
 			return not_found(web)
-		end --}}}
+
+		end
 	end
 end --}}}
 
@@ -274,10 +319,10 @@ function edit_get(web,obj_type,id) --{{{ TODO split controller from view.
 			end
 			return admin_layout(web,{user=user,pages=pages},div.group{title,ul(res)})
 		elseif not models[obj_type] then -- There is no model named obj_type
-			print("-- debug edit_get: no model found for type ",obj_type)
+			print("-- warn edit_get: no model found for type ",obj_type)
 			return not_found(web) --TODO rewrite not_found to include an error message
 		elseif not models[obj_type].form then -- The model obj_type exists, but isn't editable (eg, has no form)
-			print("--debug edit_get","object type doesn't have a form-table, add form table to the model")
+			print("--warn edit_get","object type doesn't have a form-table, add form table to the model")
 			return not_found(web)
 		else -- The obj_type exist and is editable
 			if not id then -- no id given, edit is type /edit/<object>, so list all <objects>
@@ -297,7 +342,7 @@ function edit_get(web,obj_type,id) --{{{ TODO split controller from view.
 				local form=models[obj_type].form
 				if not object then -- The object does not exist in the db
 					if web.input.create ~= "1" then -- we're not creating a new object
-						print("--debug edit object not found and create ~= 1")
+						print("--warn edit object not found and create ~= 1")
 						return not_found(web)
 					end
 					return render_edit(web,{user=user,pages=pages},obj_type,object,form.fields)
@@ -339,7 +384,7 @@ function edit_post(web,obj,id) --{{{
 				this_object:delete()
 				return web:redirect(web:link("/edit/"..obj))
 			else
-				print("--debug edit_post, link_to = ",web.path_info)
+				--print("--debug edit_post, link_to = ",web.path_info)
 				return web:redirect(web:link("/delete/"..obj.."/"..id),{link_to=web.path_info}) -- page asking for confirmation + processing in POST
 			end
 		elseif web.POST.op==strings.save then --{{{
@@ -455,7 +500,7 @@ function new_get(web,obj) --{{{
 	else
 		if obj:match("^/new/?$") then -- We're doing the generic /new or /new/ page here -> return a list of object types
 			-- TODO split off view for render_generic_new from the controller
-			print("--debug new_get, we matched the generic new page!") 
+			--print("--debug new_get, we matched the generic new page!") 
 			local title = h2(strings.edit_objects)
 			local res = {}
 			for name,model in pairs(models) do
@@ -467,15 +512,14 @@ function new_get(web,obj) --{{{
 			local nextPage = a{href=web:link(web.path_info,{offset = offset+limit}), strings.nextPage}
 			return admin_layout(web,{user=user,pages=pages},div.group{title,ul(res),br(),prevPage," ",nextPage})
 		elseif not models[obj] then
-			print("-- debug new_get, no model exists for",obj)
+			print("--warn new_get, no model exists for",obj)
 		elseif not models[obj].form then
-			print("-- debug new_get, the model does not have a form")
+			print("--warn new_get, the model does not have a form")
 		else -- The model really is editable
-			print("-- debug new_get, Your're new",obj, "will be ready soon!")
 			-- Get the last assigned autoid, and add 1 to it... will work fine until after 9223372036854775807 inserts in a table ... which I hope no one ever has to enter ;)
 			local curs,mess = models[obj].model.conn:execute(([[SELECT seq FROM sqlite_sequence WHERE name = '%s%s']]):format(models[obj].model.table_prefix,models[obj].name))
 			local new_id = curs:fetch()+1
-			if mess then print("-- debug new_get",obj,"max(id) returned",mess) end 
+			if mess then print("--warn new_get",obj,"max(id) returned",mess) end 
 			if models[obj].form.depends then
 				local depends = models[obj].form.depends.."_id"
 				if web.GET[depends] then -- if the dependancy already has been provided to the new call, then pass it to the edit page.
@@ -500,19 +544,19 @@ function depends_get(web,obj,new_id) --{{{
 		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
 	else
 		if obj:match("^/depends/?$") then
-			print("--debug depends_get, we need a model for dependancy checking")
+			print("--warn depends_get, we need a model for dependancy checking")
 			return web:redirect("/new")
 		elseif not models[obj] then
-			print("--debug depends_get, model does not exist")
+			print("--warn depends_get, model does not exist")
 			return web:redirect("/new")
 		elseif not models[obj].form then
-			print("--debug depends_get, model does not have a form")
+			print("--warn depends_get, model does not have a form")
 			return web:redirect("/new")
 		elseif not models[obj].form.depends then
-			print("--debug depends_get, model has no dependancies")
+			print("--warn depends_get, model has no dependancies")
 			return web:redirect("/new/"..obj)
 		elseif not new_id then
-			print("--debug depends_get, we do need the new id number of what is getting created")
+			print("--warn depends_get, we do need the new id number of what is getting created")
 			return web:redirect("/new/")
 		else
 			local depends = models[obj].form.depends
@@ -524,47 +568,6 @@ function depends_get(web,obj,new_id) --{{{
 end --}}}
 bib:dispatch_get(depends_get,"/depends/(%w+)/(%d+)/?")
 
---- Controller for the reservations page
-function reservations_get(web) --{{{
-	local user = check_user(web)
-	local pages = models.page:find_all()
-	if not user or user.is_admin ~= 1 then
-		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
-	else
-		local order = web.input.order or "ASC"
-		local limit = tonumber(web.input.limit) or 10
-		local offset = tonumber(web.input.offset) or 0
-		if order:upper() ~= "ASC" and order:upper() ~="DESC" then -- Only allow asc or desc
-			order = "ASC"
-		end
-		limit = limit >= 0 and limit or 10 -- The maximum number of results to return (number or nil)
-		offset = offset >=0 and offset or 0 -- The offset from book 0 (number or nil)
-		local fields = {overdue="overdue",copy_code="copy_code",telephone="telephone",real_name="real_name",user_id="user_id",email="email",title="title"}
-		local orderby = web.input.orderby and web.input.orderby:lower() or "overdue"-- The search criterium
-		-- Sanitation of the parameters
-		orderby = fields[orderby] or "overdue"
-		-- Find users that have over-due books
-		-- using SQL because of WAY to complicated using Orbit
-		local query = ([[SELECT julianday("now")-julianday(date_return) AS overdue, bib_lending.copy_id, bib_copy.book_id, bib_book.title, bib_book.id||"/"||copy_id as copy_code, user_id, bib_user.real_name, bib_user.telephone, bib_user.email
-		FROM bib_lending, bib_user, bib_book, bib_copy
-		WHERE bib_lending.copy_ID = bib_copy.id -- connect copy with lending
-		and bib_copy.book_id = bib_book.id -- connect copy with book
-		and bib_lending.user_ID = bib_user.id -- connect user with lending
-		and overdue > 0
-		ORDER BY %s %s LIMIT %s OFFSET %s;]]):format(orderby,order,limit,offset)
-		local curs,err = models.book.model.conn:execute(query)
-		if err then print("-- warn, overdues query in admin returned ",err) end
-		local overdues = {}
-		local t={}
-		while curs:fetch(t,"a") do
-			overdues[#overdues+1] = t
-			t={}
-		end
-		local allusers=models.user:find_all({fields={"id","real_name"}})
-		-- TODO pass fields for sorting sidebar
-		return render_admin(web,{user=user,allusers=allusers,overdues=overdues,fields=fields,order=order,limit=limit,offset=offset,orderby=orderby})
-	end
-end --}}}
 
 --- Controller for the lendings page
 function lendings_get(web) --{{{
@@ -607,6 +610,7 @@ function lendings_get(web) --{{{
 	end
 end --}}}
 bib:dispatch_get(lendings_get,"/lendings/?")
+
 --- Controller for the reservations page
 function reservations_get(web) --{{{
 	local user = check_user(web)
@@ -629,7 +633,7 @@ function reservations_get(web) --{{{
 		orderby = fields[orderby] or "date"
 		-- Find users that have over-due books
 		-- using SQL because of WAY to complicated using Orbit
-		local query = ([[SELECT date, bib_book.title, bib_reservation.book_id, user_id, bib_user.real_name, bib_user.telephone, bib_user.email
+		local query = ([[SELECT date, bib_book.title, bib_reservation.book_id, user_id, bib_user.real_name, bib_user.telephone, bib_user.email, bib_reservation.id as reservation_id
 		FROM bib_reservation, bib_user, bib_book
 		WHERE bib_reservation.book_id = bib_book.id -- connect copy with reservation
 		and bib_reservation.user_id = bib_user.id -- connect user with reservation
@@ -646,7 +650,6 @@ function reservations_get(web) --{{{
 			for k=1,#all_copies do
 				all_copies_ids[k] = all_copies[k].id
 			end
-			print("--debug reservations_get, all_copies = ",tprint(all_copies_ids))
 			local copies_lend = models.lending:find_all("copy_id = ?",{all_copies_ids})
 			local copies_available = #all_copies - #copies_lend
 			local older_reservations = models.reservation:find_all(('book_id = ? and julianday(date) < julianday("%s")'):format(t.date),{t.book_id})
@@ -740,26 +743,29 @@ end --}}}
 --- Renders the administration inner_html
 function render_admin(web,args, params) --{{{
 	local offset,limit,order,orderby=args.offset, args.limit, args.order, args.orderby
-	local part1 = {
-		h2(strings.admin_home),
-		h3(strings.lendings)
+	local header1 = {
 		}
-	local ft = { input{type="text",name="lend_copy",value=web.GET.lend_copy},'<select name="user_id">'}
+	users_select={}
 	for k=1,#args.allusers do
 		local user=args.allusers[k]
-		ft[#ft+1]=option{value=user.id,user.id,":",user.real_name}
+		users_select[#users_select+1]=option{value=user.id,user.id,":",user.real_name}
 	end
-	ft[#ft+1]='</select>'
-	ft[#ft+1]=input{type="submit",name="op",value=strings.lend_copy}
-	ft2={
+
+	local form_lend = { input{type="text",name="lend_copy",value=web.GET.lend_copy},'<select name="user_id">',users_select,'</select>',
+		input{type="submit",name="op",value=strings.lend_copy}
+		}
+	local form_return={
 		input{type="text",name="return_copy",value=web.GET.return_copy},
 		input{type="submit",name="op",value=strings.return_copy}
-		}
-	local part2 = {
-		a{href="/lendings",strings.lendings_list},"<br />",
-		a{href="/reservations",strings.reservations_list}
 	}
-	local part3 =  h3(strings.overdues)
+	local form_reserve_book = {
+		input{ type="text",name="reserve_book",value=web.GET.reserve_book},'<select name="user_id">',users_select,'</select>',
+		input{ type="submit",name="op",value=strings.reserve}
+	}
+	local form_cancel_reservation= {
+		input{ type="text",name="cancel_reservation",value=web.GET.cancel_reservation},
+		input{ type="submit",name="op",value=strings.cancel_reservation}
+	}
 	local overdues_table
 	if #args.overdues == 0 then
 		overdues_table = strings.warn.no_overdues
@@ -791,8 +797,18 @@ function render_admin(web,args, params) --{{{
 		local nextPage = a{href=web:link(url,{offset = offset+limit}), strings.nextPage}
 		overdues_table = {'<table id="overdues">',tab_body,'</table>',prevPage," ",nextPage}
 	end
-	return admin_layout(web,args,{part1,form{name="lend",action=web.path_info, method="POST",ft},form{name="return",action=web.path_info, method="POST",ft2},
-		part2,part3,overdues_table},
+	return admin_layout(web,args,{
+		h2(strings.admin_home),
+		h3(strings.lendings),
+			form{name = "lend",action=web.path_info, method="POST",form_lend},
+			form{name = "return",action=web.path_info, method="POST",form_return},
+			a { href = "/lendings",strings.lendings_list},
+		h3(strings.reservations),
+			form{name = "reserve",action=web.path_info, method="POST",form_reserve_book},
+			form{name = "cancel_reservation",action=web.path_info, method="POST",form_cancel_reservation},
+			a { href = "/reservations",strings.reservations_list},
+		h3(strings.overdues),
+		overdues_table},
 		_sort_sidebar(web,args.fields,order,orderby,limit,offset))
 	
 end --}}}
@@ -886,6 +902,20 @@ function render_edit(web,args,obj_type,obj,fields) --{{{ fields now is a table o
 					res[#res+1]=a{ href=web:link("/new/"..field.model.name), strings.new, strings[field.model.name]:lower() }
 				end
 			end --}}}
+		elseif field["type"]=="select_disabled" then --{{{
+			-- construct select out of other model
+			-- Build query for returning all elements from a model
+			local str
+			if field.model then -- If there is a model, get the object, and write it's readable name instead of the ID
+				local refObj = field.model:find(prevVal)
+				str = refObj:concat_fields(field.fields)
+			end
+			res[#res+1]=input{ name = field.name, size="35", readonly="readonly", ["type"]="text",value=str}
+			if field.model then
+				res[#res+1]=a{ href=web:link("/edit/"..field.model.name.."/"..prevVal),strings.edit," ",strings[field.model.name]:lower()," ",prevVal}
+				res[#res+1]=" "
+				res[#res+1]=a{ href=web:link("/new/"..field.model.name), strings.new, strings[field.model.name]:lower() }
+			end --}}}
 		elseif field["type"]=="text" then
 			res[#res+1] = input{ name = field.name, ["type"]=field["type"],value=prevVal,readonly=readonly}
 		elseif field["type"]=="readonly" then
@@ -917,7 +947,6 @@ function render_delete(web,args,object) --{{{
 			input{ type="hidden", name="link_to", value = web.input.link_to }
 		}
 	}
-	print("--debug render_delete, link_to= ", web.input.link_to)
 	return admin_layout(web,args,res)
 end --}}}
 --- Renders the dependancy resolution page
@@ -996,7 +1025,7 @@ function render_reservations(web,args) --{{{
 			td(a{ href = "/edit/user/"..item.user_id,item.real_name}),
 			td(tostring(item.user_id)),
 			td(item.available and strings.available or strings.unavailable), -- TODO put into reservations_get
-			td(a{ href = web:link("/admin",{cancel_reservation=item.book_id}),strings.cancel_reservation})
+			td(a{ href = web:link("/admin",{cancel_reservation=item.reservation_id}),strings.cancel_reservation})
 		}
 	end
 	
