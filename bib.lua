@@ -199,6 +199,9 @@ models = {
 --				2) provided a table of options, in order which can be selected (no option to change display value to other than the actual value in the DB. Will be added if needed)
 --			file		: upload a file + select url (TODO to be implemented)
 --			readonly	: a read-only text
+--			select_disabled : The same as the select-type, but with a readonly textbox as input. With links for editing and making new objects of the type
+--			multi		: An input for n-to-n relations, multiple objects share the same property, and can have more than one property (as for example keywords)
+--						needs a model, where the infos them self reside, and a model_link, which contains the links from the infos to the objects
 --		valid(value,obj)	: validation function and filtering function receives the field to filter/validate and needs to return the following:
 --			value : the validated and transformed value, nil if invalid and to be refused
 --			message : Warning message if needed (like when a book has an invalid isbn, which is possible)
@@ -214,12 +217,13 @@ models.book.form={ --{{{
 		 --TODO Make these fields autocomplete, and add a "new ... " link style drupal autocomplete for authors and tags
 		{name="author_id",caption=strings.author,["type"]="select",model=models.author,fields={"rest_name","last_name","id"}},
 		{name="cat_id",caption=strings.category,["type"]="select",model=models.cat,fields={"cat_text","id"}},
+		{name="tags",caption=strings.tags,["type"]="multi",model=models.tag,model_link=models.taglink,field="tag_text"}, -- TODO validation function!
 		{name="isbn",caption=strings.isbn,["type"]="text",valid=check_isbn},
 		{name="abstract",caption=strings.abstract,["type"]="textarea",update=update_html},
 		{name="url_ref",caption=strings.url_ref,["type"]="text"}, -- TODO maybe add link verification?
 		{name="url_cover",caption=strings.url_cover,["type"]="text"}
 	}
-} --}}}
+}--}}}
 models.cat.form={ --{{{
 	title="cat_text",
 	fields={
@@ -430,7 +434,7 @@ do -- Only put the functions in the model
 end --}}}
 
 cache = orbit.cache.new(bib, cache_path) -- No longer used: pages where username get's displayed can't be cached.
--- Methods for the page model / Métodos para el model "page"
+-- Methods for the page model / Métodos para el model "page" 
 --- Updates a pages body_html from the markdown version body
 function models.page.update_html(page,force) --{{{
 	if page.body_html == "" or force then -- first time

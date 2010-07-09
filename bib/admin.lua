@@ -356,6 +356,69 @@ end --}}}
 
 --- Controller for the edit pages, POST part aka form processing
 function edit_post(web,obj,id) --{{{
+
+	local function save_multi_field(input,this_object,this_model,this_form,this_field) --{{{
+		-- Truth table + actions for this
+		-- tag in form		0	0	1	1
+		-- tag in object	0	1	0	1
+		-- 00,11 -> nop
+		-- 01 -> add link between info and object, if not existing in models.tag then make new
+		-- 10 -> remove link between info and object (implement here for automatic collection of unused tags)
+		-- Separate infos from list (comma-seperated)
+		local infos={}
+		-- Make sure there is a tag -- TODO copy to validation function
+		for info_text in (input..","):gmatch("%s*(%w+)%s*,") do
+			local info = this_field.model:find_first(this_field.field.." = ?",{info_text})
+			if not info then -- Make new info!
+				if this_field.model.form.valid then
+					info_text=this_field.model.form.valid(info_text)
+				end
+				if info_text then -- it was either validated or not checked
+					info = this_field.model:new()
+					info[this_field.field] = info_text
+					info:save()
+					print("--debug edit_post, created new tag:",info_text)
+				end
+			end
+			if info_text then -- it was either validated or not checked
+				infos[#infos+1]=info
+				print("--debug edit_post: found tag",info,"with id",info.id)
+			end
+		end -- after this, info_texts contain all infos in the form
+		local infos_rev = {} -- Build a reverse table, which contains true for all info_id's that have been given in the form
+		for _,info in pairs(infos) do
+			infos_rev[info.id]=true
+		end
+
+		-- Get link_model id's for the current object
+		local cur_links = this_field.model_link:find_all(this_object.name.."_id = ?",{this_object.id})
+		local cur_infos_ids = {}
+		local info_id_name = this_field.model.name.."_id"
+		for k=1,#cur_links do
+			cur_infos_ids[cur_links[k][info_id_name]]=true
+			print("--debug edit_post, found connection to this object with info",cur_links[k][info_id_name])
+		end
+		-- verify all infos
+		for _,info in pairs(infos) do -- loop through all info in the form
+			if not cur_infos_ids[info.id] then -- in the form and not linked to the object
+				-- create new link
+				local new_link = this_field.model_link:new()
+				new_link[this_field.model.name.."_id"]=info.id
+				new_link[this_object.name.."_id"]=this_object.id
+				new_link:save()
+				print("--debug edit_post, created link from object to tag",this_field.model:find(info.id).tag_text)
+			end -- else there was already a link, and no new link needs to be made
+		end
+		for info_id in pairs(cur_infos_ids) do -- loop through all infos linked to the object
+			if not infos_rev[info_id] then -- it's not in the form and it's linked to the object
+				-- remove link
+				local link = this_field.model_link:find_first(("%s_id = ? and %s_id = ?"):format(this_object.name,this_field.model.name),{this_object.id,info_id})
+				link:delete()
+				print("--debug edit_post, removed link from object to tag",this_field.model:find(info_id).tag_text)
+			end -- else, it's also in the form, and nothing has to be done
+		end
+	end --}}}
+
 	local user = check_user(web)
 	if not user or user.is_admin ~= 1 then
 		return web:redirect(web:link("/login",{link_to=web.path_info,no_admin="1"}));
@@ -397,40 +460,39 @@ function edit_post(web,obj,id) --{{{
 				for k,v in pairs(web.POST) do
 					local field_changed
 					if this_form.fields[k] then
---						if this_form.fields[k].autogen then FIXME deprecated, autogenned stuf happens in render_edit
---							v=this_form.fields[k].autogen(this_object) --replace v; so if the field has a valid function, it still runs
-----							print("--debug edit_post, autogen", v)
---						end
---						print("--debug edit_post, object has a form for this field:",this_form.fields[k].name)
-						if this_form.fields[k].valid then -- Form field contains a validation function, receives string to validate/filter and the object
---							print("--debug edit_post, field "..this_form.fields[k].name.." has a validation function")
+						local this_field = this_form.fields[k]
+						if this_field.valid then -- Form field contains a validation function, receives string to validate/filter and the object --{{{
 							local dummy -- To protect the field from getting overwritten upon errors
-							dummy,mesg[#mesg+1]=this_form.fields[k].valid(v,this_object) -- if there is a message, capture and forward.
---							print("--debug edit_post, validation function returned",dummy,mesg[#mesg])
-							if dummy and tostring(this_object[k]) ~= dummy then
---								print("--debug edit_post, object valid, and new")
+							dummy,mesg[#mesg+1]=this_field.valid(v,this_object) -- if there is a message, capture and forward.
+							if dummy and tostring(this_object[k]) ~= dummy then -- TODO check this whole if-then-else-structure {{{
 								field_changed,obj_changed = true,true
-								this_object[k]=dummy
+								if this_field["type"] == "multi" then -- The multi type is the only one not getting saved to the object itself --{{{
+									print("--debug Validation function returned ok, and field is multi")
+									save_multi_field(v,this_object,this_model,this_form,this_field)
+									-- if they are not the same, save, else ignore
+								else --}}}
+									this_object[k]=dummy -- TODO change
+								end
 							else
---								print("--debug edit_post, the value ",v," was not valid, or not new")
+							-- TODO Checkme, why is this here?
 							end
 						else -- no validation function present for this field
---							print("--debug edit_post, field "..this_form.fields[k].name.." does not have a validation function")
 							if tostring(this_object[k])~=v then -- the value is new
---								print("--debug edit_post, the new value ",v,"differs from the old one",this_object[k])
 								field_changed,obj_changed = true,true
-								this_object[k]=v 
+								if this_form.fields[k]["type"] == "multi" then -- The multi type is the only one not getting saved to the object itself --{{{
+									print("--debug no Validation function field is multi")
+									save_multi_field(v,this_object,this_model,this_form,this_field)
+								else
+									this_object[k]=v  -- TODO Change
+								end --}}}
 							end
-						end
+						end --}}}
 						if this_form.fields[k].update and field_changed then -- Field has an update function
---							print("--debug edit_post, field "..this_form.fields[k].name.." has an updatefield")
-							this_form.fields[k].update(k,this_object)
+							this_form.fields[k].update(k,this_object) 
 						end
 					end
 				end
-	--			print("--debug edit_post, there have been changes to the object ",this_object.name,this_object.id,", saving changes")
 				this_object:save()
---				print("--debug edit_post, Object saved")
 			end
 			return web:redirect(web:link("/edit/"..obj.."/"..id),{mesg=mesg}) --}}}
 		elseif web.POST.op==strings.cancel then
@@ -919,11 +981,27 @@ function render_edit(web,args,obj_type,obj,fields) --{{{ fields now is a table o
 		elseif field["type"]=="text" then
 			res[#res+1] = input{ name = field.name, ["type"]=field["type"],value=prevVal,readonly=readonly}
 		elseif field["type"]=="readonly" then
-			res[#res+1] = input{ name = field.name, readonly="readonly", ["type"]="text",value=prevVal~="" and prevVal or field.autogen(models[obj_type],obj,web.GET)} --TODO TODO
+			res[#res+1] = input{ name = field.name, readonly="readonly", ["type"]="text",value=prevVal~="" and prevVal or field.autogen(models[obj_type],obj,web.GET)}
 		elseif field["type"]=="textarea" then
 			res[#res+1] = textarea{ name = field.name, cols="100", rows="10",style="vertical-align:middle",readonly=readonly,prevVal}
 			res[#res+1] = br()
 			res[#res+1] = a{ href=web:link("/markdown",lang), target="_blank", strings.markdown_expl }
+		elseif field["type"]=="multi" then -- For n-to-n relations as in tags for books
+			local links = field.model_link:find_all(("%s_id = ?"):format(obj.name),{obj.id}) -- Find all links where the id is that of the object being edited.
+			local info_ids = {} -- Build a table containing all the id's of the used info bits.
+			local info_id_str = field.model.name.."_id"
+			for k=1,#links do
+				info_ids[k] = links[k][info_id_str]
+			end
+			local infos = {}
+			local infos = field.model:find_all("id = ?",{info_ids}) -- Get all needed infos
+			local info_texts = {}
+			for k=1,#infos do
+				info_texts[k]=infos[k][field.field]
+			end
+			local str = table.concat(info_texts,", ")
+			print("--debug render_edit, str=",str)
+			res[#res+1] = input{ name = field.name, size="35", ["type"]="text",value=str}
 		end	
 		res[#res+1]=br()
 	end
