@@ -68,7 +68,7 @@ require "luarocks.require"	-- Working with Luarocks
 require "orbit"				-- uses orbit
 require "orbit.cache"		-- ... and it's caching module
 require "markdown"			-- we'll use markdown for marking up contents
-require "cosmo"				-- for templatematching
+-- require "cosmo"				-- for templatematching
 
 module("bib", package.seeall, orbit.new)
 -- Load the config file bib/config.lua / Carga el archivo de configuración bib/config.lua
@@ -197,11 +197,12 @@ models = {
 --			select		: drop-down selection box having 2 usages:
 --				1) provided a model, will supply id's for all items in the model, using {fields} as fields for displaying in the options
 --				2) provided a table of options, in order which can be selected (no option to change display value to other than the actual value in the DB. Will be added if needed)
---			file		: upload a file + select url (TODO to be implemented)
 --			readonly	: a read-only text
 --			select_disabled : The same as the select-type, but with a readonly textbox as input. With links for editing and making new objects of the type
 --			multi		: An input for n-to-n relations, multiple objects share the same property, and can have more than one property (as for example keywords)
 --						needs a model, where the infos them self reside, and a model_link, which contains the links from the infos to the objects
+--			upload		: An upload field + button + link to the file (if one) + deletebutton
+--							Needs a directory where to put the files, and a string to be added to the filename.
 --		valid(value,obj)	: validation function and filtering function receives the field to filter/validate and needs to return the following:
 --			value : the validated and transformed value, nil if invalid and to be refused
 --			message : Warning message if needed (like when a book has an invalid isbn, which is possible)
@@ -221,7 +222,7 @@ models.book.form={ --{{{
 		{name="isbn",caption=strings.isbn,["type"]="text",valid=check_isbn},
 		{name="abstract",caption=strings.abstract,["type"]="textarea",update=update_html},
 		{name="url_ref",caption=strings.url_ref,["type"]="text"}, -- TODO maybe add link verification?
-		{name="url_cover",caption=strings.url_cover,["type"]="text"}
+		{name="url_cover",caption=strings.url_cover,["type"]="upload"}
 	}
 }--}}}
 models.cat.form={ --{{{
@@ -827,7 +828,7 @@ bib:dispatch_get(markdown_syntax, "/markdown")
 -- css / css
 -- images / imagenes
 -- book covers / Tapas de los libros
-bib:dispatch_static("/covers/.*%.jpg","/covers/.*%gif")
+bib:dispatch_static("/covers/.*%.jpg","/covers/.*%gif","/css/.*%.css","/images/.*%.jpg")
 -- Static html pages: Manuals, markdown syntax, ...
 
 -- Views for the application / Views para la aplicación
@@ -837,20 +838,22 @@ return html{
 		title(bib_title),
 		meta{ ["http-equiv"] = "Content-Type",
 		content = "text/html; charset=utf-8" },
-		--link{ rel = 'stylesheet', type = 'text/css', href = web:static_link('/style.css'), media = 'screen' }
+		link{ rel = 'stylesheet', type = 'text/css', href = web:static_link('/css/style.css'), media = 'screen' }
 	},
 	body{
 		div{ id = "container",
-			div{ id = "header", title = "sitename" },
+			div{ id = "header", title = "sitename",
+				h1(strings.header)
+				},
 			div{ id = "menu",
 				_menu(web, args)
 			}, 
 			div{ id = "sidebar",
 				_sidebar(web, args)
-			},  
+			},
+			rightsidebar and div{ id="sidebar_right", rightsidebar} or "",
 			div{ id = "contents", inner_html },
-			rightsidebar and div{ id="sidebar_right",style="clear:both", rightsidebar} or "",
-			div{ id = "footer", style="clear:both", markdown(strings.copyright_notice) }
+			div{ id = "footer", markdown(strings.copyright_notice) }
 		}
 	}
 } 
@@ -964,7 +967,7 @@ function render_index(web, args) --{{{
 			local str_time = book.date_acquisition
 			if cur_time ~= str_time then
 				cur_time = str_time
-				res[#res + 1] = h2{style="clear:both",str_time}
+				res[#res + 1] = h2(str_time)
 			end
 			res[#res + 1] = _book_short(web, book)
 		end
@@ -981,7 +984,7 @@ function _book_short(web, book)
 		cover_img="/covers/cover0-default.gif"
 	end
 	local abstract_html = book.abstract_html:match("^(.*)<!%-%-%s*break%s*%-%->") or book.abstract_html
-	return div.book_short{ style="clear:both",
+	return div.book_short{
 		h3{book.title,strings.by_author, a{ href=web:link("/author/"..book.author_id),book.author_last_name,", ",book.author_rest_name}},
 		div.cover{ a{ href = web:link("/book/".. book.id), img { style="float:left", height="100px",src=web:static_link(cover_img), alt=strings.cover_of .. book.title} }},
 		div.tags{em{book.cat,class="category"},": ", table.concat(book.tags,", ") },
@@ -1122,7 +1125,7 @@ function render_author(web,args) --{{{
 	local url = web.path_info:gsub("/+$","").."/" -- Strip extra // and make sure there is 1
 	local prevPage = a{href=web:link(url,{offset = offset>limit and offset-limit or 0}), strings.prevPage}
 	local nextPage = a{href=web:link(url,{offset = offset+limit}), strings.nextPage}
-	return layout(web,args,{title,url_ref,books,prevPage,nextPage},_sort_sidebar(web,args.fields,order,orderby,limit))
+	return layout(web,args,{title,url_ref,books,prevPage," ",nextPage},_sort_sidebar(web,args.fields,order,orderby,limit))
 end --}}}
 
 --- Renders the authors list page

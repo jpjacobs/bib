@@ -31,14 +31,19 @@ strings=bib.trans.strings[language_def]
 -- Datos de conexión a la base de datos
 database = {
   driver = "sqlite3",
-    conn_data = { bib.real_path .. "/bib.db" }
+    conn_data = { bib.real_path .. "bib.db" }
 	--  driver = "mysql",
 	--  conn_data = { "blog", "root", "password" }
 	}
+print(database.conn_data[1])
 
 -- Name of the template to be used by the application
 -- Nombre del patrón para ser utilizado por la aplicación
 template_name = "bib"
+
+-- Header text for the library
+-- Ecabezado para el biblioteca
+strings.header="Biblioteca Plataforma Unidos"
 
 -- Configuration of the cache
 -- Configuración del antememoria

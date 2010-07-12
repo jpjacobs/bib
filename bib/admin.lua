@@ -461,16 +461,16 @@ function edit_post(web,obj,id) --{{{
 					local field_changed
 					if this_form.fields[k] then
 						local this_field = this_form.fields[k]
-						if this_field.valid then -- Form field contains a validation function, receives string to validate/filter and the object --{{{
+						if this_field.valid then -- Form field contains a validation function, receives string to validate/filter and the object
 							local dummy -- To protect the field from getting overwritten upon errors
 							dummy,mesg[#mesg+1]=this_field.valid(v,this_object) -- if there is a message, capture and forward.
-							if dummy and tostring(this_object[k]) ~= dummy then -- TODO check this whole if-then-else-structure {{{
+							if dummy and tostring(this_object[k]) ~= dummy then -- TODO check this whole if-then-else-structure
 								field_changed,obj_changed = true,true
-								if this_field["type"] == "multi" then -- The multi type is the only one not getting saved to the object itself --{{{
+								if this_field["type"] == "multi" then -- The multi type is the only one not getting saved to the object itself
 									print("--debug Validation function returned ok, and field is multi")
 									save_multi_field(v,this_object,this_model,this_form,this_field)
 									-- if they are not the same, save, else ignore
-								else --}}}
+								else
 									this_object[k]=dummy -- TODO change
 								end
 							else
@@ -479,14 +479,14 @@ function edit_post(web,obj,id) --{{{
 						else -- no validation function present for this field
 							if tostring(this_object[k])~=v then -- the value is new
 								field_changed,obj_changed = true,true
-								if this_form.fields[k]["type"] == "multi" then -- The multi type is the only one not getting saved to the object itself --{{{
+								if this_form.fields[k]["type"] == "multi" then -- The multi type is the only one not getting saved to the object itself
 									print("--debug no Validation function field is multi")
 									save_multi_field(v,this_object,this_model,this_form,this_field)
 								else
 									this_object[k]=v  -- TODO Change
-								end --}}}
+								end
 							end
-						end --}}}
+						end
 						if this_form.fields[k].update and field_changed then -- Field has an update function
 							this_form.fields[k].update(k,this_object) 
 						end
@@ -732,12 +732,12 @@ function login_layout(web, params) --{{{
 		head{
 			title{strings.login_page},
 			meta{ ["http-equiv"]="Content-Type",content="text/html; charset=utf-8" },
-			-- link{ rel="stylesheet", type = 'text/css', href = web:static_link('/admin_style.css'), media ='screen'}
+			link{ rel="stylesheet", type = 'text/css', href = web:static_link('/css/style.css'), media ='screen'}
 		},
 		body{
 			div{ id="container",
-				div{ id = "header", title="sitename", "Bib.lua ",strings.login_page },
-				div{ id = "mainnav",
+				div{ id = "header", title="sitename", h1{strings.header," ",strings.login_page}},
+				div{ id = "sidebar",
 					ul{
 						li{ a{ href = web:link"/",strings.homepage_name} }
 					}
@@ -753,8 +753,8 @@ function login_layout(web, params) --{{{
 							input{ type = "hidden", name = "link_to", value = params.link_to },
 						}
 					},
+				},
 				div{ id="footer",markdown(strings.copyright_notice) }
-				}
 			}
 		}
 	}
@@ -769,15 +769,15 @@ function admin_layout(web, args, inner_html, rightsidebar) --{{{
 		head{
 			title{"Bib.lua ",strings.administration},
 			meta{ ["http-equiv"] = "Content-Type", content = "text/html; charset=utf-8" },
-			link{ rel = 'stylesheet', type = 'text/css', href = web:static_link('/admin_style.css'), media = 'screen' }
+			link{ rel = 'stylesheet', type = 'text/css', href = web:static_link('/css/style.css'), media = 'screen' }
 		},
 		body{
 			div{ id = "container",
-				div{ id = "header", title = "sitename", "Bib.lua ",strings.administration },
+				div{ id = "header", title = "sitename", h1{strings.header," ",strings.administration}},
 				div{ id = "menu", _menu(web,args) }, -- Uses the same _menu as in layout
 				div{ id = "sidebar", _admin_sidebar(web, args) },  
+				rightsidebar and div{ id="sidebar_right", rightsidebar} or "",
 				div{ id = "contents", inner_html },
-				rightsidebar and div{ id="sidebar_right",style="clear:both", rightsidebar} or "",
 				div{ id = "footer", markdown(strings.copyright_notice) }
 			}
 		}
@@ -846,7 +846,7 @@ function render_admin(web,args, params) --{{{
 			local item=args.overdues[k]
 			local class
 			if k%2==1 then class="alt" end --TODO CSS color according urgency.
-			tab_body[#tab_body+1]= tr{
+			tab_body[#tab_body+1]= tr{ class=class,
 				td(tostring(math.floor(item.overdue))),
 				td(item.real_name),
 				td(a{href=web:link("/book/"..item.book_id, {copy=item.copy_id}),item.title}),
@@ -1002,6 +1002,9 @@ function render_edit(web,args,obj_type,obj,fields) --{{{ fields now is a table o
 			local str = table.concat(info_texts,", ")
 			print("--debug render_edit, str=",str)
 			res[#res+1] = input{ name = field.name, size="35", ["type"]="text",value=str}
+		elseif field["type"] == "upload" then -- For uploading electronic documents, covers, ... to the server running bib.lua
+			-- We need here : upload box, if already existing, link to file and one to delete it.
+			-- For the post part see: /home/jpjacobs/.luarocks/lib/luarocks/rocks/orbit/2.1.0-1/samples/pages/test.op
 		end	
 		res[#res+1]=br()
 	end
@@ -1012,7 +1015,7 @@ function render_edit(web,args,obj_type,obj,fields) --{{{ fields now is a table o
 	res[#res+1]=input{ type="submit", id="save",   name="op", value=strings.save }
 	res[#res+1]=input{ type="submit", id="cancel", name="op", value=strings.cancel }
 	res[#res+1]=input{ type="submit", id="delete", name="op", value=strings.delete }
-	return admin_layout(web,args,div.group(form{action=web.path_info, method="POST", res}))
+	return admin_layout(web,args,div.group(form{enctype="multi-part/form-data",action=web.path_info, method="POST", res}))
 end --}}}
 --- Renders the delete page
 function render_delete(web,args,object) --{{{
@@ -1062,7 +1065,7 @@ function render_lendings(web,args) --{{{
 		local item=args.lendings[k]
 		local class
 		if k%2==1 then class="alt" end --TODO CSS color according urgency.
-		tab_body[#tab_body+1]= tr{
+		tab_body[#tab_body+1]= tr{ class=class,
 			td(item.date_return),
 			td(item.copy_code),
 			td(a{ href = web:link("/book/"..item.book_id,{copy=item.copy_id}),item.title}),
@@ -1075,7 +1078,7 @@ function render_lendings(web,args) --{{{
 	local url = web.path_info:gsub("/+$","") -- Strip extra // and make sure there is 1
 	local prevPage = a{href=web:link(url,{offset = offset>limit and offset-limit or 0}), strings.prevPage}
 	local nextPage = a{href=web:link(url,{offset = offset+limit}), strings.nextPage}
-	return admin_layout(web,args,{'<table id="lendings">',tab_body,'</table>',prevPage," ",nextPage},_sort_sidebar(web,args.fields,order,orderby,limit,offset))
+	return admin_layout(web,args,{part1,'<table id="lendings">',tab_body,'</table>',prevPage," ",nextPage},_sort_sidebar(web,args.fields,order,orderby,limit,offset))
 end --}}}
 --- Renders the administration's reservation list inner_html
 function render_reservations(web,args) --{{{
@@ -1097,7 +1100,7 @@ function render_reservations(web,args) --{{{
 		local item=args.reservations[k]
 		local class
 		if k%2==1 then class="alt" end --TODO CSS color if book should be already returned by previous lender.
-		tab_body[#tab_body+1]= tr{
+		tab_body[#tab_bodyA+1]= tr{ class=class,
 			td(item.date),
 			td(a{ href = web:link("/book/"..item.book_id,{copy=item.copy_id}),item.title}),
 			td(a{ href = "/edit/user/"..item.user_id,item.real_name}),
@@ -1110,7 +1113,7 @@ function render_reservations(web,args) --{{{
 	local url = web.path_info:gsub("/+$","") -- Strip extra // and make sure there is 1
 	local prevPage = a{href=web:link(url,{offset = offset>limit and offset-limit or 0}), strings.prevPage}
 	local nextPage = a{href=web:link(url,{offset = offset+limit}), strings.nextPage}
-	return admin_layout(web,args,{'<table id="reservations">',tab_body,'</table>',prevPage," ",nextPage},_sort_sidebar(web,args.fields,order,orderby,limit,offset))
+	return admin_layout(web,args,{part1,'<table id="reservations">',tab_body,'</table>',prevPage," ",nextPage},_sort_sidebar(web,args.fields,order,orderby,limit,offset))
 end --}}}
 
 orbit.htmlify(bib, "_.+", "admin_layout","login_layout", "render_.+","edit_get","new_get")

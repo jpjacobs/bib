@@ -1,0 +1,62 @@
+TODO's voor het bib.lua systeem
+Systeem
+	V Nummering boeken en copies
+		: Introduceer een nieuw veld voor elke kopie: copy_nr
+		: Zo is elk boek gedefinieerd al book_id/copy_nr waarbij copy_nr begint
+		: bij 1 voor het eerste exemplaar van het boek, stopt bij n als er n
+		: exemplaren zij van het boek, in plaats van het copy_id te gebruiken,
+		: wat op niet veel zou slaan.
+		V initDB.sql
+		V form
+		V /depends -> OK
+		V edit_get
+			V disable fields passed as GET parameters to edit_get 
+			V calculation of autogen fields
+Gebruikers
+	book uitbreiden ala edit/<object> 
+		V rechter zijbalk toevoegen voor orderby/order/limit/offset
+		browsing index
+	toevoegen autheur
+		V pagina per autheur met zijn boeken
+		V pagina met lijst van autheurs
+		browsing index
+	catalog
+	rating systeem
+Administratie
+	L admin layout fixen
+	edit
+		V verwijder selectievak voor boek in edit/copy/x (tis belachelijk om een kopie van boek te veranderen) en voeg toe aan de titel
+		V tags voor edit/book. Yee haa
+		upload covers + Uitbreiden naar uploaden documenten.
+		foutmeldingen door validatie van velden
+		Aanduiden verplichte velden.
+		link naar "toon huidig object" als het een dispatcher heeft.
+		rechter zijbalk toevoegen voor orderby/order/limit/offset
+	book
+		V naast "edit book" ook "new copy"
+	V new
+	V delete
+		dependancy checking before deleting. Like copies depend on books -> delete all copies before deleting a book
+	V forms
+		V maak dat het forms.title een table verwerkt, concateneer object[t.1] tot object[t.n] met ", ", vooral ivm copy's.
+	gen-catalog
+	algemeen
+		alle admin gerelateerde dingen naar /admin/... ipv /
+		logischere redirects na acties zoals edit/delete/new mbv link_to
+	admin interface
+		V admin_post voor lend copy
+		V admin_post voor return copy
+		V Bewerk /book zodat we van daaruit ook kunnen lenen/teruggeven
+		V Delete reservatie als het boek aan de gebruiker wordt uitgeleend
+		V Check reservaties en # beschikbare copies voor uitlenen
+		V voeg link toe naar lijst van lendings + handlers
+		V voeg link toe naar lijst van reservations + handlers
+		V Voeg reservaties maken en anuleren toe aan admin interface
+		email mensen als reservatie binnengekomen is -> admin_post,return handler
+Algemeen
+	looks & feel
+		laat next/prev page enkel zien als er effectief zijn...
+Credits
+	fotos + achtergrond: http://www.fromoldbooks.org
+Nieuwe dings:
+	electronische documenten
