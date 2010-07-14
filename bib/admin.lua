@@ -512,36 +512,57 @@ function edit_post(web,obj,id) --{{{
 				this_object:delete()
 			end
 			return web:redirect(web:link("/edit/"..obj)) -- TODO use link_to
-		elseif web.POST.upload==strings.upload then -- Handles uploading of files
+		elseif web.POST.op==strings.upload then -- Handles uploading of files
 			print("--debug edit_post, we're uploading a file")
 			for var,value in pairs(web.POST) do
 				if this_form.fields[var] and this_form.fields[var]["type"] == "upload" then
+					print("--debug tprint(web.POST)", tprint(web.POST))
 					local f=web.POST[var] -- Handles uploading of files
-					print("f=",tostring(f))
-					if f then
-						print("--debug edit_post,",var,"= ",f.name)--tprint(f))
+					print("--debug edit_post,",var,"= ",f.name)--tprint(f))
+					if type(f)=="table" then
 						this_object.ext=f.name:match(".*%.(%w%w+)$") -- save the extension temporarly to the object
 						print("--debug edit_post, var is",var,"and ext is",this_object.ext,"and this_form.file1 is",tprint(this_form.fields[var]))
-						if not this_form.fields[var].exts[this_object.ext:lower()] then
+						if not this_form.fields[var].accept[this_object.ext:lower()] then
 							print("--warn edit_post: extension",this_object.ext,"not supported for field",var)
-							break
-						end -- TODO message
-						local filename=this_form.fields[var].location:gsub("@([%w_]+)",this_object):gsub("[^%w%-/%.]","_") -- Optional check for clean filenames.
-						this_object.ext=nil -- wipe extension from the object, for 
-						print("--debug edit_post, writing uploaded file to",filename)
-						local dest = io.open(web.real_path..filename,"wb")
-						if dest then
-							dest:write(f.contents)
-							dest:close()
-							this_object[var]=filename
-							this_object:save()
-						else
-							print("--warn edit_post, could not open file",filename,"for writing")
-							-- Return a TODO message
+						else -- TODO message
+							local filename=this_form.fields[var].location:gsub("@([%w_]+)",this_object):gsub("[^%w%-/%.]","_") -- Optional check for clean filenames.
+							this_object.ext=nil -- wipe extension from the object, for 
+							print("--debug edit_post, writing uploaded file to",filename)
+							local dest = io.open(web.real_path..filename,"wb")
+							if dest then
+								dest:write(f.contents)
+								dest:close()
+								this_object[var]=filename
+								this_object:save()
+								print("--debug this_object after save",tprint(this_object))
+							else
+								print("--warn edit_post, could not open file",filename,"for writing")
+								-- Return a TODO message
+							end
 						end
 					end --TODO return message if nothing filled in?
 				end
 			end
+			return web:redirect(web:link(("/edit/%s/%s"):format(obj,id))) --TODO use link_to
+		elseif web.POST.op==strings.delete_file then -- Handles removing of uploaded files.
+			print("--debug removing file for field",web.POST.fieldname)
+			local function deleteFile(fieldname)
+				local filename=this_object[fieldname]
+				this_object[fieldname] = nil
+				this_object:save()
+				if not os.rename(bib.real_path..filename,bib.real_path.."trash"..filename) then
+					print("--warn, could not move file",filename," to trash, try manually")
+				end
+			end
+
+			if type(web.POST.fieldname) == "string" then -- Only one file checked for deletion
+				deleteFile(web.POST.fieldname)
+			elseif type(web.POST.fieldname) == "table" then -- More than one file checked for deletion
+				for k=1,#web.POST.fieldname do
+					deleteFile(web.POST.fieldname[k])
+				end
+			end -- else do nothing and return to page anyway
+
 			return web:redirect(web:link(("/edit/%s/%s"):format(obj,id))) --TODO use link_to
 		end
 	end
@@ -1056,9 +1077,19 @@ function render_edit(web,args,obj_type,obj,fields) --{{{ fields now is a table o
 			end
 			res[#res+1] = input{ name = field.name, size="35", ["type"]="text",value=str}
 		elseif field["type"] == "upload" then -- For uploading electronic documents, covers, ... to the server running bib.lua
-			res[#res+1] = input{ type="file", name = field.name, size="35",accept="image/jpg,image/png"}
-			res[#res+1] = input{ type="submit", name = "upload", value=strings.upload}
-
+			local accept = {}
+			for k,v in pairs(field.accept) do
+				accept[#accept+1] = v
+			end
+			res[#res+1] = input{ type="file", name = field.name, size="35",accept=table.concat(accept,",")} --handling accepted types
+			res[#res+1] = input{ type="submit", name = "op", value=strings.upload}
+			print("--debug render_edit, prevVal= ",prevVal)
+			if prevVal ~= "" then
+				res[#res+1] = input{ type="submit", name = "op", value=strings.delete_file}
+				res[#res+1] = strings.warn.delete_file_sure
+				res[#res+1] = input{ type="checkbox", name = "fieldname", value=field.name}
+				res[#res+1] = a{ href=web:link(prevVal), target="_blank", strings.show_file}
+			end
 			-- We need here : upload box, if already existing, link to file and one to delete it.
 			-- For the post part see: /home/jpjacobs/.luarocks/lib/luarocks/rocks/orbit/2.1.0-1/samples/pages/test.op
 		end	
