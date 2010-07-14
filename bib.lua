@@ -202,7 +202,7 @@ models = {
 --			multi		: An input for n-to-n relations, multiple objects share the same property, and can have more than one property (as for example keywords)
 --						needs a model, where the infos them self reside, and a model_link, which contains the links from the infos to the objects
 --			upload		: An upload field + button + link to the file (if one) + deletebutton
---							Needs a directory where to put the files, and a string to be added to the filename.
+--							Needs a directory where to put the files, and a string-template be used as the filename(needs to contain @id of the object, then can contain any field of the objects record, and @ext for the extension
 --		valid(value,obj)	: validation function and filtering function receives the field to filter/validate and needs to return the following:
 --			value : the validated and transformed value, nil if invalid and to be refused
 --			message : Warning message if needed (like when a book has an invalid isbn, which is possible)
@@ -222,7 +222,7 @@ models.book.form={ --{{{
 		{name="isbn",caption=strings.isbn,["type"]="text",valid=check_isbn},
 		{name="abstract",caption=strings.abstract,["type"]="textarea",update=update_html},
 		{name="url_ref",caption=strings.url_ref,["type"]="text"}, -- TODO maybe add link verification?
-		{name="url_cover",caption=strings.url_cover,["type"]="upload"}
+		{name="url_cover",caption=strings.url_cover,["type"]="upload",location="covers/cover@id-@title.@ext",exts={jpg="jpg",png="png"}}
 	}
 }--}}}
 models.cat.form={ --{{{
@@ -828,7 +828,7 @@ bib:dispatch_get(markdown_syntax, "/markdown")
 -- css / css
 -- images / imagenes
 -- book covers / Tapas de los libros
-bib:dispatch_static("/covers/.*%.jpg","/covers/.*%gif","/css/.*%.css","/images/.*%.jpg")
+bib:dispatch_static("/covers/.*%.jpg","/covers/.*%.gif","/covers/.*%.png","/css/.*%.css","/images/.*%.jpg")
 -- Static html pages: Manuals, markdown syntax, ...
 
 -- Views for the application / Views para la aplicación
@@ -986,7 +986,7 @@ function _book_short(web, book)
 	local abstract_html = book.abstract_html:match("^(.*)<!%-%-%s*break%s*%-%->") or book.abstract_html
 	return div.book_short{
 		h3{book.title,strings.by_author, a{ href=web:link("/author/"..book.author_id),book.author_last_name,", ",book.author_rest_name}},
-		div.cover{ a{ href = web:link("/book/".. book.id), img { style="float:left", height="100px",src=web:static_link(cover_img), alt=strings.cover_of .. book.title} }},
+		div.cover{ a{ href = web:link("/book/".. book.id), img { class="imgfloat", height="100px",src=web:static_link(cover_img), alt=strings.cover_of .. book.title} }},
 		div.tags{em{book.cat,class="category"},": ", table.concat(book.tags,", ") },
 		strings.copies_available:gsub("@(%w+)",{available=math.max(0,book.copies_available),total=book.ncopies}),
 		abstract_html,
@@ -1034,7 +1034,7 @@ function render_book(web, args) --{{{
 	
 	local res={mesg,
 		h3{book.title ,strings.by_author,a{ href=web:link("/author/"..book.author_id), book.author_last_name , ", " , book.author_rest_name} },
-		div.cover{ a{ href = web:link("/book/".. book.id), img {height="100px", src=web:static_link(cover_img), alt=strings.cover_of .. book.title} } },
+		div.cover{ a{ href = web:link("/book/".. book.id), img {class="imgfloat", height="100px", src=web:static_link(cover_img), alt=strings.cover_of .. book.title} } },
 		div.tags{ em.category {book.cat}, ": ", table.concat(book.tags,", ") },
 		strings.copies_available:gsub("@(%w+)",{available=math.max(0,book.copies_available),total=book.ncopies}),
 		book.abstract_html

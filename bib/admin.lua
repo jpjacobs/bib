@@ -445,6 +445,13 @@ function edit_post(web,obj,id) --{{{
 		if web.POST.op==strings.delete then
 			if web.POST.create == "1" then -- this is a newly created "unsaved" object
 				this_object:delete()
+				for idx=1,#this_object.form.fields do
+					local this_field=this_object.form.fields[k]
+					if this_field["type"]=="upload" then
+						print("--debug edit_post, delete, moving uploaded file",this_object[this_field],"to trash")
+						os.rename(this_object[this_field],bib.real_path.."trash/"..this_object[this_field])
+					end
+				end
 				return web:redirect(web:link("/edit/"..obj))
 			else
 				--print("--debug edit_post, link_to = ",web.path_info)
@@ -461,6 +468,9 @@ function edit_post(web,obj,id) --{{{
 					local field_changed
 					if this_form.fields[k] then
 						local this_field = this_form.fields[k]
+							--if this_field["type"]=="select_disabled" or this_field["type"] == "read_only" then
+							-- These types don't change anything any way... so just jump out of the loop here
+						--else
 						if this_field.valid then -- Form field contains a validation function, receives string to validate/filter and the object
 							local dummy -- To protect the field from getting overwritten upon errors
 							dummy,mesg[#mesg+1]=this_field.valid(v,this_object) -- if there is a message, capture and forward.
@@ -492,14 +502,47 @@ function edit_post(web,obj,id) --{{{
 						end
 					end
 				end
+				print("--debug edit_post, this_object=",tprint(this_object))
 				this_object:save()
 			end
 			return web:redirect(web:link("/edit/"..obj.."/"..id),{mesg=mesg}) --}}}
 		elseif web.POST.op==strings.cancel then
 			if web.POST.create == "1" then
+				print("--debug edit_post, deleted object",this_object.name,this_object.id)
 				this_object:delete()
 			end
 			return web:redirect(web:link("/edit/"..obj)) -- TODO use link_to
+		elseif web.POST.upload==strings.upload then -- Handles uploading of files
+			print("--debug edit_post, we're uploading a file")
+			for var,value in pairs(web.POST) do
+				if this_form.fields[var] and this_form.fields[var]["type"] == "upload" then
+					local f=web.POST[var] -- Handles uploading of files
+					print("f=",tostring(f))
+					if f then
+						print("--debug edit_post,",var,"= ",f.name)--tprint(f))
+						this_object.ext=f.name:match(".*%.(%w%w+)$") -- save the extension temporarly to the object
+						print("--debug edit_post, var is",var,"and ext is",this_object.ext,"and this_form.file1 is",tprint(this_form.fields[var]))
+						if not this_form.fields[var].exts[this_object.ext:lower()] then
+							print("--warn edit_post: extension",this_object.ext,"not supported for field",var)
+							break
+						end -- TODO message
+						local filename=this_form.fields[var].location:gsub("@([%w_]+)",this_object):gsub("[^%w%-/%.]","_") -- Optional check for clean filenames.
+						this_object.ext=nil -- wipe extension from the object, for 
+						print("--debug edit_post, writing uploaded file to",filename)
+						local dest = io.open(web.real_path..filename,"wb")
+						if dest then
+							dest:write(f.contents)
+							dest:close()
+							this_object[var]=filename
+							this_object:save()
+						else
+							print("--warn edit_post, could not open file",filename,"for writing")
+							-- Return a TODO message
+						end
+					end --TODO return message if nothing filled in?
+				end
+			end
+			return web:redirect(web:link(("/edit/%s/%s"):format(obj,id))) --TODO use link_to
 		end
 	end
 	return tprint(web):gsub("\n","<br />")
@@ -570,6 +613,7 @@ function new_get(web,obj) --{{{
 					res[#res+1] = li{ a{ href=web:link("/new/"..name), " ", strings[name]}}
 				end
 			end
+			-- TODO prev/next page are overkill here.
 			local prevPage = a{href=web:link(web.path_info,{offset = offset>limit and offset-limit or 0}), strings.prevPage}
 			local nextPage = a{href=web:link(web.path_info,{offset = offset+limit}), strings.nextPage}
 			return admin_layout(web,{user=user,pages=pages},div.group{title,ul(res),br(),prevPage," ",nextPage})
@@ -902,11 +946,12 @@ function render_login(web,args,params) --{{{
 end --}}}
 --- Renders the editing inner_html
 function render_edit(web,args,obj_type,obj,fields) --{{{ fields now is a table of fields.
-	local m = models.obj_type
+	local this_model = models[obj_type]
 	local tit
 	if obj then -- not editing a newly created object
 		tit = h2{strings.edit," ", strings[obj_type] ," ",obj.id,": ",obj:concat_fields(obj.form.title,", ") }
 	else
+		print("--debug render_edit, obj_type=",obj_type)
 		tit = h2{strings.create_new," ",strings[obj_type]}
 	end	
 	local res={tit}
@@ -916,6 +961,7 @@ function render_edit(web,args,obj_type,obj,fields) --{{{ fields now is a table o
 		local readonly -- Contains whether this controll will be readonly because a matching GET parameter was found
 		local prevVal = obj and obj[field.name] or "" -- fill the undefined values
 		if web.GET[field.name] then
+			print("--debug render_edit, web.GET[",field.name,"]=",web.GET[field.name])
 			prevVal = web.GET[field.name]
 			readonly="readonly"
 		end
@@ -969,10 +1015,11 @@ function render_edit(web,args,obj_type,obj,fields) --{{{ fields now is a table o
 			-- Build query for returning all elements from a model
 			local str
 			if field.model then -- If there is a model, get the object, and write it's readable name instead of the ID
-				local refObj = field.model:find(prevVal)
+				local refObj = field.model:find(prevVal) -- TODO TODO hier loopt het mis met het verversen na het POSTen van de data.
 				str = refObj:concat_fields(field.fields)
 			end
-			res[#res+1]=input{ name = field.name, size="35", readonly="readonly", ["type"]="text",value=str}
+			res[#res+1]=input{ name = field.name.."fake", size="35", readonly="readonly", ["type"]="text",value=str}
+			res[#res+1]=input{ name = field.name, type="hidden",value=web.GET[field.name]}
 			if field.model then
 				res[#res+1]=a{ href=web:link("/edit/"..field.model.name.."/"..prevVal),strings.edit," ",strings[field.model.name]:lower()," ",prevVal}
 				res[#res+1]=" "
@@ -988,21 +1035,30 @@ function render_edit(web,args,obj_type,obj,fields) --{{{ fields now is a table o
 			res[#res+1] = a{ href=web:link("/markdown",lang), target="_blank", strings.markdown_expl }
 		elseif field["type"]=="multi" then -- For n-to-n relations as in tags for books
 			local links = field.model_link:find_all(("%s_id = ?"):format(obj.name),{obj.id}) -- Find all links where the id is that of the object being edited.
-			local info_ids = {} -- Build a table containing all the id's of the used info bits.
-			local info_id_str = field.model.name.."_id"
-			for k=1,#links do
-				info_ids[k] = links[k][info_id_str]
+			local str=""
+			if #links >0 then
+				local info_ids = {} -- Build a table containing all the id's of the used info bits.
+				local info_id_str = field.model.name.."_id"
+				for k=1,#links do
+					info_ids[k] = links[k][info_id_str]
+				end
+				local infos = {}
+				print("--debug render_edit, tprint(info_ids)",tprint(info_ids))
+				local infos = field.model:find_all("id = ?",{info_ids}) -- Get all needed infos
+				local info_texts = {}
+				for k=1,#infos do
+					info_texts[k]=infos[k][field.field]
+				end
+				str = table.concat(info_texts,", ")
+				print("--debug render_edit, str=",str)
+			else
+				print("--debug render_edit, no tags found, str= ''")
 			end
-			local infos = {}
-			local infos = field.model:find_all("id = ?",{info_ids}) -- Get all needed infos
-			local info_texts = {}
-			for k=1,#infos do
-				info_texts[k]=infos[k][field.field]
-			end
-			local str = table.concat(info_texts,", ")
-			print("--debug render_edit, str=",str)
 			res[#res+1] = input{ name = field.name, size="35", ["type"]="text",value=str}
 		elseif field["type"] == "upload" then -- For uploading electronic documents, covers, ... to the server running bib.lua
+			res[#res+1] = input{ type="file", name = field.name, size="35",accept="image/jpg,image/png"}
+			res[#res+1] = input{ type="submit", name = "upload", value=strings.upload}
+
 			-- We need here : upload box, if already existing, link to file and one to delete it.
 			-- For the post part see: /home/jpjacobs/.luarocks/lib/luarocks/rocks/orbit/2.1.0-1/samples/pages/test.op
 		end	
@@ -1015,7 +1071,7 @@ function render_edit(web,args,obj_type,obj,fields) --{{{ fields now is a table o
 	res[#res+1]=input{ type="submit", id="save",   name="op", value=strings.save }
 	res[#res+1]=input{ type="submit", id="cancel", name="op", value=strings.cancel }
 	res[#res+1]=input{ type="submit", id="delete", name="op", value=strings.delete }
-	return admin_layout(web,args,div.group(form{enctype="multi-part/form-data",action=web.path_info, method="POST", res}))
+	return admin_layout(web,args,div.group(form{enctype="multipart/form-data",action=web.path_info, method="POST", res}))
 end --}}}
 --- Renders the delete page
 function render_delete(web,args,object) --{{{

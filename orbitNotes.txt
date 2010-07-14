@@ -8,6 +8,7 @@ All my notes I found out when using Orbit
 3. Find_all and find_first can be passed a table to fill in values for ? . Only works with an array (no holes).
 	For example: book:find_all("id = ? ",{{1,3}}) returns { book1, book3 }
 	This however does not work for :find()
+	Further: be ware of empty tables! It'll bork.
 
 4.  orbit.htmlify(app, "layout", "_.+", "render_.+") is a really necessary function for render_* functions to work.
 

@@ -31,7 +31,7 @@ strings=bib.trans.strings[language_def]
 -- Datos de conexión a la base de datos
 database = {
   driver = "sqlite3",
-    conn_data = { bib.real_path .. "bib.db" }
+    conn_data = { "bib.db" }
 	--  driver = "mysql",
 	--  conn_data = { "blog", "root", "password" }
 	}
@@ -47,7 +47,7 @@ strings.header="Biblioteca Plataforma Unidos"
 
 -- Configuration of the cache
 -- Configuración del antememoria
-cache_path=bib.real_path .. "/page_cache"
+cache_path="page_cache"
 -- Remove existing file cache
 os.remove(cache_path)
 

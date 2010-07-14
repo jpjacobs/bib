@@ -80,12 +80,7 @@ h3
 
 #sidebar ul
 {
-	list-style-type:disc;
-	list-style-position:outside;
 	padding-left:1em;
-}
-#sidebar li
-{
 }
 
 #sidebar_right
@@ -138,7 +133,9 @@ table tr.urgent td{
 	background-color:#FF5555;
 }
 /*.blogentry { border-bottom: 1px solid #006600; }*/
-.imagefloat { float: right; }
+.imagefloat {
+	float: left;
+}
 
 #menu
 {
@@ -194,7 +191,7 @@ div.book_short{
 	border: 1px solid #006600;
 	margin: 0 0 10px 10px;
 }
-
+/*
 .blogentry ul
 {
 	list-style-type: none;
@@ -212,7 +209,7 @@ div.book_short{
    	padding: 0 0 0 7px;
     line-height: 150%;
 }
-
+*/
 #footer
 {
 	clear: both;
