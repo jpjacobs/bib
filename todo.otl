@@ -27,11 +27,11 @@ Administratie
 	edit
 		V verwijder selectievak voor boek in edit/copy/x (tis belachelijk om een kopie van boek te veranderen) en voeg toe aan de titel
 		V tags voor edit/book. Yee haa
-		upload covers + Uitbreiden naar uploaden documenten.
+		V upload covers + Uitbreiden naar uploaden documenten.
 		foutmeldingen door validatie van velden
 		Aanduiden verplichte velden.
 		link naar "toon huidig object" als het een dispatcher heeft.
-		rechter zijbalk toevoegen voor orderby/order/limit/offset
+		V rechter zijbalk toevoegen voor orderby/order/limit/offset
 	book
 		V naast "edit book" ook "new copy"
 	V new
@@ -59,4 +59,4 @@ Algemeen
 Credits
 	fotos + achtergrond: http://www.fromoldbooks.org
 Nieuwe dings:
-	electronische documenten
+	V electronische documenten

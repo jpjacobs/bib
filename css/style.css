@@ -185,6 +185,26 @@ div.book_short{
 	padding:1em;
 }
 
+div.mesg{
+	border: solid 1px #00AA00;
+	background-color: #DDFFDD;
+	padding:1em;
+	margin:1em; 
+}
+div.error{
+	border: solid 1px #AA0000;
+	background-color: #FFDDDD;
+	padding:1em;
+	margin:1em; 
+}
+
+.hilight{
+	border: solid 1px #0000AA;
+	background-color: #DDDDFF;
+	padding:1em;
+}
+	
+
 .imagefloat
 {
 	padding: 2px;

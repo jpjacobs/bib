@@ -1043,7 +1043,8 @@ function render_book(web, args) --{{{
 		div.cover{ a{ href = web:link("/book/".. book.id), img {class="imgfloat", height="100px", src=web:static_link(cover_img), alt=strings.cover_of .. book.title} } },
 		div.tags{ em.category {book.cat}, ": ", table.concat(book.tags,", ") },
 		strings.copies_available:gsub("@(%w+)",{available=math.max(0,book.copies_available),total=book.ncopies}),
-		book.abstract_html
+		book.abstract_html,"<br />",
+		(book.edoc and book.edoc ~="") and a{href=web:link(book.edoc),strings.attached_document} or ""
 		}
 	if args.user then
 		res[#res+1]= h3(strings.user_menu)
@@ -1070,23 +1071,23 @@ function render_book(web, args) --{{{
 					a{ href=web:link("/delete/book/"..book.id,{link_to=web.path_info}), strings.delete," ",strings.book}," ",
 					a{ href=web:link("/new/copy/",{book_id=book.id}),strings.new_copy}," ",
 					a{ href=web:link("/admin",{reserve_book=book.id}), strings.reserve}
-					}
 				}
+			}
 			local copies_list = {}
 			for _,copy in pairs(args.copies) do
 				local hilight
 				if tonumber(web.GET.copy)==copy.id then
 					hilight="hilight"
 				end
-				copies_list[#copies_list+1] = li{ class=hilight, book.title.." ", copy.id ," ",
+				copies_list[#copies_list+1] = li{ class=hilight, book.title.." ", copy.book_id,"/",copy.copy_nr ," ",
 					-- If the copy is available, enable the lend-link
 					(copy.available and
-						a{ href=web:link("/admin",{lend_copy=copy.id}),	strings.lend_copy})
+						a{ href=web:link("/admin",{lend_copy=copy.book_id.."/"..copy.copy_nr}),	strings.lend_copy})
 					or "" ," ",
 					-- If the copy is not available, enable the return-link
 					(not copy.available and
 						{strings.lend_to_until:gsub("@(%w+)",{user=a{href="/edit/user/"..copy.user_id,copy.user_name},date=copy.date_return})," ",
-						a{ href=web:link("/admin",{return_copy=copy.id}),	strings.return_copy}})
+						a{ href=web:link("/admin",{return_copy=copy.book_id.."/"..copy.copy_nr}),	strings.return_copy}})
 					or ""," ", --TODO pimp copy received with user_id and date_return if lend.
 					a{ href=web:link("/edit/copy/"..copy.id),	strings.edit_copy}," ",
 					a{ href=web:link("/delete/copy/"..copy.id),	strings.delete_copy}," ",

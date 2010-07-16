@@ -120,13 +120,16 @@ function admin_post(web,args) --{{{
 			if web.POST.lend_copy == "" then
 				return web:redirect("/admin")
 			end
-			local book_id,copy_nr = web.POST.lend_copy:match("%d+/%d+")
+			local book_id,copy_nr = web.POST.lend_copy:match("(%d+)/(%d+)")
+			print("--debug admin_post, book_id, copy_nr =",book_id,copy_nr)
 			local copy,copy_id
 			if not book_id then -- did not find in frmat book_id/copy_nr, try the raw copy_id (as in db)
 				copy_id = web.POST.lend_copy:match("%d+")
 				copy = models.copy:find(web.POST.lend_copy)
+				print("--debug admin_post, copy_id used, instead of copy_code, copy_id =",copy_id, copy.id)
 			else
-				copy = models.copy:find_first("book_id = ? and copy_nr = ?",{book_id,copy_nr,fields={"id"}})
+				copy = models.copy:find_first("book_id = ? and copy_nr = ?",{book_id,copy_nr})
+				print("--debug admin_post, copy_code used, copy found=",copy.id)
 			end
 			local user_lend = models.user:find(web.POST.user_id)
 			if not (book_id and copy_nr) and not copy_id then
@@ -141,16 +144,20 @@ function admin_post(web,args) --{{{
 				-- TODO if a reservation is pending _for another user_ then message the admin.
 				-- How do we handle this with multiple copies? per reservation, one copy should be kept back
 				-- Number of reservations, excepting reservations for this book for this user
-				local num_res = models.reservation:find_first("user_id <> ? and book_id == ?",{user_lend.id,copy.book_id,fields={[[count(id)]]}})
+				local num_res = models.reservation:find_first("user_id <> ? and book_id == ?",{user_lend.id,copy.book_id,fields={[[count(id)]]}}) -- TODO necesary?
+				print("--debug admin_post, num_res = ",tprint(num_res))
 				-- Total number of copies of this book
-				local all_copies = models.copy:find_first("id == ?",{copy.id,fields={"id"}})
+				local all_copies = models.copy:find_all("book_id == ?",{book_id,fields={"id"}})
+				print("--debug admin_post, all_copies = ",tprint(all_copies))
 				-- Number of copies of this book being lend
 				local copies_ids = {}
 				for k=1,#all_copies do	
 					copies_ids[#copies_ids+1] = all_copies[k].id
 				end
+				print("--debug admin_post, copy.book_id = ",tprint(copy))
 				local book=models.book:find(copy.book_id)
 				book:pimp()
+				print("--debug admin_post, book",tprint(book))
 				-- There aren't any copies available, and the lending user does not have a reservation for this book
 				if book.copies_available <= 0 and not models.reservation:find_by_user_id_and_book_id({user_lend.id,copy.book_id}) then
 					print("--warn admin_post, no un-reserved copies available, lending NOT made")
@@ -170,7 +177,7 @@ function admin_post(web,args) --{{{
 			end
 			return web:redirect(web:link("/admin")) -- }}} TODO message & link_to
 		elseif web.POST.op==strings.return_copy then --{{{
-			local book_id,copy_nr = web.POST.return_copy:match("%d+/%d+")
+			local book_id,copy_nr = web.POST.return_copy:match("(%d+)/(%d+)")
 			local copy , copy_id
 			if not book_id then -- did not find in frmat book_id/copy_nr, try the raw copy_id (as in db)
 				copy_id = web.POST.return_copy:match("%d+")
@@ -191,8 +198,8 @@ function admin_post(web,args) --{{{
 			end
 			return web:redirect(web:link("/admin")) -- TODO message & link_to --}}}
 		elseif web.POST.op==strings.reserve then --{{{
-			local book_id = web.POST.reserve_book:match("%d+")
-			local user_id = web.POST.user_id:match("%d+")
+			local book_id = web.POST.reserve_book:match("(%d+)")
+			local user_id = web.POST.user_id:match("(%d+)")
 			-- Check user, Check id, check book exists, check previous reservation, check lendings if already lend
 			if not user_id then
 				print("--warn user_id should be numerics only")
@@ -474,14 +481,16 @@ function edit_post(web,obj,id) --{{{
 						if this_field.valid then -- Form field contains a validation function, receives string to validate/filter and the object
 							local dummy -- To protect the field from getting overwritten upon errors
 							dummy,mesg[#mesg+1]=this_field.valid(v,this_object) -- if there is a message, capture and forward.
-							if dummy and tostring(this_object[k]) ~= dummy then -- TODO check this whole if-then-else-structure
+							if dummy and tostring(this_object[k]) ~= dummy then
 								field_changed,obj_changed = true,true
 								if this_field["type"] == "multi" then -- The multi type is the only one not getting saved to the object itself
 									print("--debug Validation function returned ok, and field is multi")
 									save_multi_field(v,this_object,this_model,this_form,this_field)
 									-- if they are not the same, save, else ignore
+								elseif this_field["type"] == "upload" then -- The upload type gets saved on uploading, not on saving.
+									-- If it would be saved on saving, the file gets wiped because the box is again empty.
 								else
-									this_object[k]=dummy -- TODO change
+									this_object[k]=dummy
 								end
 							else
 							-- TODO Checkme, why is this here?
@@ -492,8 +501,10 @@ function edit_post(web,obj,id) --{{{
 								if this_form.fields[k]["type"] == "multi" then -- The multi type is the only one not getting saved to the object itself
 									print("--debug no Validation function field is multi")
 									save_multi_field(v,this_object,this_model,this_form,this_field)
+								elseif this_field["type"] == "upload" then -- The upload type gets saved on uploading, not on saveing
+									-- If it would be saved on saving, the file gets wiped because the box is again empty.
 								else
-									this_object[k]=v  -- TODO Change
+									this_object[k]=v
 								end
 							end
 						end
@@ -516,9 +527,7 @@ function edit_post(web,obj,id) --{{{
 			print("--debug edit_post, we're uploading a file")
 			for var,value in pairs(web.POST) do
 				if this_form.fields[var] and this_form.fields[var]["type"] == "upload" then
-					print("--debug tprint(web.POST)", tprint(web.POST))
 					local f=web.POST[var] -- Handles uploading of files
-					print("--debug edit_post,",var,"= ",f.name)--tprint(f))
 					if type(f)=="table" then
 						this_object.ext=f.name:match(".*%.(%w%w+)$") -- save the extension temporarly to the object
 						print("--debug edit_post, var is",var,"and ext is",this_object.ext,"and this_form.file1 is",tprint(this_form.fields[var]))
@@ -550,7 +559,7 @@ function edit_post(web,obj,id) --{{{
 				local filename=this_object[fieldname]
 				this_object[fieldname] = nil
 				this_object:save()
-				if not os.rename(bib.real_path..filename,bib.real_path.."trash"..filename) then
+				if not os.rename(bib.real_path..filename,bib.real_path.."trash"..filename) then -- TODO TODO Checkme! does not move files to trash
 					print("--warn, could not move file",filename," to trash, try manually")
 				end
 			end
@@ -634,10 +643,7 @@ function new_get(web,obj) --{{{
 					res[#res+1] = li{ a{ href=web:link("/new/"..name), " ", strings[name]}}
 				end
 			end
-			-- TODO prev/next page are overkill here.
-			local prevPage = a{href=web:link(web.path_info,{offset = offset>limit and offset-limit or 0}), strings.prevPage}
-			local nextPage = a{href=web:link(web.path_info,{offset = offset+limit}), strings.nextPage}
-			return admin_layout(web,{user=user,pages=pages},div.group{title,ul(res),br(),prevPage," ",nextPage})
+			return admin_layout(web,{user=user,pages=pages},div.group{title,ul(res),br()})
 		elseif not models[obj] then
 			print("--warn new_get, no model exists for",obj)
 		elseif not models[obj].form then
@@ -718,7 +724,7 @@ function lendings_get(web) --{{{
 		orderby = fields[orderby] or "date_return"
 		-- Find users that have over-due books
 		-- using SQL because of WAY to complicated using Orbit
-		local query = ([[SELECT date_return, bib_book.title, bib_copy.book_id, bib_lending.copy_id, bib_book.id||"/"||copy_id AS copy_code, user_id, bib_user.real_name, bib_user.telephone, bib_user.email
+		local query = ([[SELECT date_return, bib_book.title, bib_copy.book_id, bib_lending.copy_id, bib_book.id||"/"||copy_nr AS copy_code, user_id, bib_user.real_name, bib_user.telephone, bib_user.email
 		FROM bib_lending, bib_user, bib_book, bib_copy
 		WHERE bib_lending.copy_ID = bib_copy.id -- connect copy with lending
 		and bib_copy.book_id = bib_book.id -- connect copy with book
@@ -1158,7 +1164,7 @@ function render_lendings(web,args) --{{{
 			td(a{ href = web:link("/book/"..item.book_id,{copy=item.copy_id}),item.title}),
 			td(a{ href = "/edit/user/"..item.user_id,item.real_name}),
 			td(tostring(item.user_id)),
-			td(a{ href = web:link("/admin",{return_copy=item.copy_id}),strings.return_copy})
+			td(a{ href = web:link("/admin",{return_copy=item.copy_code}),strings.return_copy})
 		}
 	end
 	
