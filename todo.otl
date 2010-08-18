@@ -6,32 +6,38 @@ Systeem
 		: bij 1 voor het eerste exemplaar van het boek, stopt bij n als er n
 		: exemplaren zij van het boek, in plaats van het copy_id te gebruiken,
 		: wat op niet veel zou slaan.
-		V initDB.sql
-		V form
-		V /depends -> OK
-		V edit_get
-			V disable fields passed as GET parameters to edit_get 
-			V calculation of autogen fields
+		: initDB.sql
+		: form
+		: /depends -> OK
+		edit_get
+			: disable fields passed as GET parameters to edit_get 
+			: calculation of autogen fields
 Gebruikers
+	index
+		Sorteer recentst naar minst recent, ipv andersom: geef een reeks copies terug ipv books.
+			: Bijna, nog zien waarom de datum _onder_ het boek verschijnt ipv erboven, en filteren van verschillende copies van zelfde boek (hoeft niet)
 	book uitbreiden ala edit/<object> 
-		V rechter zijbalk toevoegen voor orderby/order/limit/offset
+		: rechter zijbalk toevoegen voor orderby/order/limit/offset
 		browsing index
 	toevoegen autheur
-		V pagina per autheur met zijn boeken
-		V pagina met lijst van autheurs
+		: pagina per autheur met zijn boeken
+		:  pagina met lijst van autheurs
 		browsing index
 	catalog
 	rating systeem
 Administratie
 	L admin layout fixen
 	edit
-		V verwijder selectievak voor boek in edit/copy/x (tis belachelijk om een kopie van boek te veranderen) en voeg toe aan de titel
-		V tags voor edit/book. Yee haa
-		V upload covers + Uitbreiden naar uploaden documenten.
+		: verwijder selectievak voor boek in edit/copy/x (tis belachelijk om een kopie van boek te veranderen) en voeg toe aan de titel
+		: tags voor edit/book. Yee haa
+		: upload covers + Uitbreiden naar uploaden documenten.
 		foutmeldingen door validatie van velden
 		Aanduiden verplichte velden.
 		link naar "toon huidig object" als het een dispatcher heeft.
-		V rechter zijbalk toevoegen voor orderby/order/limit/offset
+		: rechter zijbalk toevoegen voor orderby/order/limit/offset
+		Tags veld moet tags bevatten, geen table: 0x ....
+	copy
+		Maak dat in de edit lijst de titel van het boek ook komt staan, ipv enkel book_id/copy_nr
 	book
 		V naast "edit book" ook "new copy"
 	V new

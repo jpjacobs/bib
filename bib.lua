@@ -477,13 +477,17 @@ function models.book.pimp(book) --{{{
 		local num_res = models.reservation:find_first("book_id == ?",{book.id,fields={[[count(id)]]}})["count(id)"]
 		-- Total number of copies of this book
 		local all_copies = models.copy:find_all("book_id == ?",{book.id,fields={"id"}})
-		-- Number of copies of this book being lend
-		local copies_ids = {}
-		for k=1,#all_copies do	
-			copies_ids[#copies_ids+1] = all_copies[k].id
+		if #all_copies ~= 0 then -- There are copies of this book in the database
+			-- Number of copies of this book being lend
+			local copies_ids = {}
+			for k=1,#all_copies do	
+				copies_ids[#copies_ids+1] = all_copies[k].id
+			end
+			local num_lend = models.lending:find_first("copy_id == ?",{copies_ids,fields={"count(id)"}})["count(id)"]
+			book.copies_available =  #all_copies-num_lend-num_res -- copies reserved > copies available 
+		else
+			book.copies_available = 0
 		end
-		local num_lend = models.lending:find_first("copy_id == ?",{copies_ids,fields={"count(id)"}})["count(id)"]
-		book.copies_available =  #all_copies-num_lend-num_res -- copies reserved > copies available 
 		book.cat = models.cat:find(book.cat_id).cat_text
 		book:update_html() -- updates html version of page if necessary.
 end --}}}
@@ -495,19 +499,18 @@ function models.book:find_recent(num) --{{{
 	-- Will contain true for books[book_id] will containt the acquisition date if it's in the list of recently acquired copies
 	-- Contenera la fecha de procuración para books[book_id] si book_id esta en uno de los ejemplares recien procurado.
 	local books,dates={},{}
-	for k=#copies,1,-1 do -- back to forth : need most recent books. / detras adelante: querimos los libros recientos
+	for k=1,#copies do -- back to forth : need most recent books. / detras adelante: querimos los libros recientos
 		local cc=copies[k]
-		dates[cc.book_id]=cc.date_acquisition
+		books[#books+1]=cc.book_id
+		dates[#books+1]=cc.date_acquisition -- #books+1 to make sure they stay in sync
 	end
-	for k,v in pairs(dates) do	-- use book_id's in dates to build the array of books to be fetched 
-		books[#books+1]=k		-- utiliza book_id en dates para construir la lista de libros para estar retornado
-	end
-
-	local ret=models.book:find_all("id = ?",{books}) -- Fetch books / buscar libros
-	for k,v in pairs(ret) do
-		local cur_book_id=v.id
-		models.book.pimp(v)
-		v.date_acquisition = dates[cur_book_id]	-- Include an acquisition date field / incluye un campo de fecho de compra
+	local ret={}
+	for k=1,#books do
+		local cur_book_id=books[k]
+		local cur_book = models.book:find(cur_book_id)
+		models.book.pimp(cur_book)
+		cur_book.date_acquisition = dates[k]	-- Include an acquisition date field / incluye un campo de fecho de compra
+		ret[k]=cur_book
 	end
 		
 	return ret

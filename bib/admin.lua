@@ -489,6 +489,8 @@ function edit_post(web,obj,id) --{{{
 									-- if they are not the same, save, else ignore
 								elseif this_field["type"] == "upload" then -- The upload type gets saved on uploading, not on saving.
 									-- If it would be saved on saving, the file gets wiped because the box is again empty.
+								elseif this_field["type"] == "select_disabled" then
+									-- Keep current value, can't be changed
 								else
 									this_object[k]=dummy
 								end
@@ -503,6 +505,8 @@ function edit_post(web,obj,id) --{{{
 									save_multi_field(v,this_object,this_model,this_form,this_field)
 								elseif this_field["type"] == "upload" then -- The upload type gets saved on uploading, not on saveing
 									-- If it would be saved on saving, the file gets wiped because the box is again empty.
+								elseif this_field["type"] == "select_disabled" then
+									-- Keep current value, can't be changed
 								else
 									this_object[k]=v
 								end
@@ -1057,32 +1061,35 @@ function render_edit(web,args,obj_type,obj,fields) --{{{ fields now is a table o
 		elseif field["type"]=="readonly" then
 			res[#res+1] = input{ name = field.name, readonly="readonly", ["type"]="text",value=prevVal~="" and prevVal or field.autogen(models[obj_type],obj,web.GET)}
 		elseif field["type"]=="textarea" then
-			res[#res+1] = textarea{ name = field.name, cols="100", rows="10",style="vertical-align:middle",readonly=readonly,prevVal}
+			res[#res+1] = textarea{ name = field.name, cols="80", rows="10",style="vertical-align:middle",readonly=readonly,prevVal}
 			res[#res+1] = br()
 			res[#res+1] = a{ href=web:link("/markdown",lang), target="_blank", strings.markdown_expl }
-		elseif field["type"]=="multi" then -- For n-to-n relations as in tags for books
-			local links = field.model_link:find_all(("%s_id = ?"):format(obj.name),{obj.id}) -- Find all links where the id is that of the object being edited.
+		elseif field["type"]=="multi" then -- For n-to-n relations as in tags for books --{{{
 			local str=""
-			if #links >0 then
-				local info_ids = {} -- Build a table containing all the id's of the used info bits.
-				local info_id_str = field.model.name.."_id"
-				for k=1,#links do
-					info_ids[k] = links[k][info_id_str]
+			if obj then
+				local links = field.model_link:find_all(("%s_id = ?"):format(obj.name),{obj.id}) -- Find all links where the id is that of the object being edited.
+				if #links >0 then
+					local info_ids = {} -- Build a table containing all the id's of the used info bits.
+					local info_id_str = field.model.name.."_id"
+					for k=1,#links do
+						info_ids[k] = links[k][info_id_str]
+					end
+					local infos = {}
+					print("--debug render_edit, tprint(info_ids)",tprint(info_ids))
+					local infos = field.model:find_all("id = ?",{info_ids}) -- Get all needed infos
+					local info_texts = {}
+					for k=1,#infos do
+						info_texts[k]=infos[k][field.field]
+					end
+					str = table.concat(info_texts,", ")
+					print("--debug render_edit, str=",str)
+				else
+					print("--debug render_edit, no tags found, str= ''")
 				end
-				local infos = {}
-				print("--debug render_edit, tprint(info_ids)",tprint(info_ids))
-				local infos = field.model:find_all("id = ?",{info_ids}) -- Get all needed infos
-				local info_texts = {}
-				for k=1,#infos do
-					info_texts[k]=infos[k][field.field]
-				end
-				str = table.concat(info_texts,", ")
-				print("--debug render_edit, str=",str)
-			else
-				print("--debug render_edit, no tags found, str= ''")
 			end
-			res[#res+1] = input{ name = field.name, size="35", ["type"]="text",value=str}
-		elseif field["type"] == "upload" then -- For uploading electronic documents, covers, ... to the server running bib.lua
+			print("--debug render_edit, second time good time, str = ",str)
+			res[#res+1] = input{ name = field.name, size="35", ["type"]="text",value=str} --}}}
+		elseif field["type"] == "upload" then -- For uploading electronic documents, covers, ... to the server running bib.lua --{{{
 			local accept = {}
 			for k,v in pairs(field.accept) do
 				accept[#accept+1] = v
@@ -1098,6 +1105,7 @@ function render_edit(web,args,obj_type,obj,fields) --{{{ fields now is a table o
 			end
 			-- We need here : upload box, if already existing, link to file and one to delete it.
 			-- For the post part see: /home/jpjacobs/.luarocks/lib/luarocks/rocks/orbit/2.1.0-1/samples/pages/test.op
+			-- }}}
 		end	
 		res[#res+1]=br()
 	end
