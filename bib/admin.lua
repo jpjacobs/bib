@@ -440,6 +440,8 @@ function edit_post(web,obj,id) --{{{
 --			print("--debug edit_post , created new object")
 			this_object=models[obj]:new() --make a new object
 			this_object:save() -- pass the new option to edit_get so if necessary fields remain empty, or the editing is canceled, the object is deleted
+								-- TODO see if this can be eliminated, and only done at the end. Would be much better, as when saving an object with one or more invalid
+								-- fields won't use up id numbers in the DB.
 		elseif not models[obj]:find(id) then
 			print("--warn edit_post, Attempting to edit non-existing object, and create~= 1")
 			return web:redirect(web:link("/edit/"..obj))
@@ -452,8 +454,9 @@ function edit_post(web,obj,id) --{{{
 		if web.POST.op==strings.delete then
 			if web.POST.create == "1" then -- this is a newly created "unsaved" object
 				this_object:delete()
-				for idx=1,#this_object.form.fields do
-					local this_field=this_object.form.fields[k]
+				for idx=1,#this_form.fields do
+					print("--debug edit_post : field = ", this_form.fields[idx].name)
+					local this_field=this_form.fields[idx]
 					if this_field["type"]=="upload" then
 						print("--debug edit_post, delete, moving uploaded file",this_object[this_field],"to trash")
 						os.rename(this_object[this_field],bib.real_path.."trash/"..this_object[this_field])
@@ -481,6 +484,7 @@ function edit_post(web,obj,id) --{{{
 						if this_field.valid then -- Form field contains a validation function, receives string to validate/filter and the object
 							local dummy -- To protect the field from getting overwritten upon errors
 							dummy,mesg[#mesg+1]=this_field.valid(v,this_object) -- if there is a message, capture and forward.
+							print("--debug edit_post: dummy, mesg=",dummy, tprint(mesg))
 							if dummy and tostring(this_object[k]) ~= dummy then
 								field_changed,obj_changed = true,true
 								if this_field["type"] == "multi" then -- The multi type is the only one not getting saved to the object itself
@@ -494,14 +498,18 @@ function edit_post(web,obj,id) --{{{
 								else
 									this_object[k]=dummy
 								end
-							else
-							-- TODO Checkme, why is this here?
+							else -- The field was not valid ... what do we do now?
+								print("--warn field ",this_field.name," is not valid! ")
+								if web.POST.create == "1" then 
+									this_object:delete() -- TODO This can be much better, long objects will loose all changes, which will piss off users
+									return web:redirect(web:link("/new/"..obj))
+								end
+								return web:redirect(web:link("/edit/"..obj.."/"..id,{create=1})) -- TODO Add message
 							end
 						else -- no validation function present for this field
 							if tostring(this_object[k])~=v then -- the value is new
 								field_changed,obj_changed = true,true
 								if this_form.fields[k]["type"] == "multi" then -- The multi type is the only one not getting saved to the object itself
-									print("--debug no Validation function field is multi")
 									save_multi_field(v,this_object,this_model,this_form,this_field)
 								elseif this_field["type"] == "upload" then -- The upload type gets saved on uploading, not on saveing
 									-- If it would be saved on saving, the file gets wiped because the box is again empty.
@@ -517,7 +525,6 @@ function edit_post(web,obj,id) --{{{
 						end
 					end
 				end
-				print("--debug edit_post, this_object=",tprint(this_object))
 				this_object:save()
 			end
 			return web:redirect(web:link("/edit/"..obj.."/"..id),{mesg=mesg}) --}}}
@@ -1057,6 +1064,7 @@ function render_edit(web,args,obj_type,obj,fields) --{{{ fields now is a table o
 				res[#res+1]=a{ href=web:link("/new/"..field.model.name), strings.new, strings[field.model.name]:lower() }
 			end --}}}
 		elseif field["type"]=="text" then
+			print("--debug render_edit: prevVal of text in ",field.name," = ",prevVal)
 			res[#res+1] = input{ name = field.name, ["type"]=field["type"],value=prevVal,readonly=readonly}
 		elseif field["type"]=="readonly" then
 			res[#res+1] = input{ name = field.name, readonly="readonly", ["type"]="text",value=prevVal~="" and prevVal or field.autogen(models[obj_type],obj,web.GET)}

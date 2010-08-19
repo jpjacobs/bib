@@ -274,7 +274,7 @@ models.author.form={ --{{{
 	title={"last_name","rest_name",sep=", "},
 	fields = {
 		{name="last_name",caption=strings.last_name,["type"]="text",valid=not_empty},
-		{name="rest_name",caption=strings.rest_name,["type"]="text",valid=not_empty},
+		{name="rest_name",caption=strings.rest_name,["type"]="text"},
 		{name="url_ref",caption=strings.url_ref,["type"]="text"}
 	}
 }--}}}
