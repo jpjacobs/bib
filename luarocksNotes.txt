@@ -1,0 +1,10 @@
+Taking care of LuaRocks
+
+* upload sources tarbal to www/projects/bib/
+* adjust bib-version-revision.rockspec
+* luarocks pack bib-version-revision.rockspec
+* upload bib-version-revision.src.rock and bib-version-revision.src.rockspec to www/projects/rocks
+* luarocks-admin make_manifest ./
+* upload manifest and index.html naar www/projects/rocks
+* install bib with luarocks --from-server=http://jpjacobs.ulyssis.org/projects/rocks bib
+
